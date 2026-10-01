@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -694,6 +695,7 @@ class AppBuilder:
     on_state: Callable[[str, dict], None] | None = None
     logger: logging.Logger | None = None
     serve_preview: bool = True
+    auto_open: bool = True
 
     def __post_init__(self) -> None:
         self.log = self.logger or log
@@ -917,7 +919,12 @@ class AppBuilder:
 
     # ------------------------------------------------------------------ abrir --
     def _launch(self, result: BuildResult, directory: Path, entry: str) -> None:
-        """Abre la app: navegador para web, intérprete para python."""
+        """Abre la app salvo bajo pytest o con ``auto_open=False``.
+
+        La salida precede a cualquier servidor, navegador o proceso Python.
+        """
+        if os.environ.get("PYTEST_CURRENT_TEST") is not None or not self.auto_open:
+            return
         if not entry:
             return
         try:
@@ -960,8 +967,6 @@ class AppBuilder:
         target = directory / entry
         if sys.platform == "win32":  # abrir el archivo tal cual, con su handler
             try:
-                import os
-
                 os.startfile(str(target))  # type: ignore[attr-defined]
                 result.url = str(target)
                 return True

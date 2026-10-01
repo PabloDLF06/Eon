@@ -6,7 +6,8 @@ pillow>=10.2
 
 # Audio: micro, wake word, reconocimiento y voz
 sounddevice>=0.4.6
-webrtcvad-wheels>=2.0.14
+# En Python 3.13+ se usa el VAD energético de reserva de core.barge_in.
+webrtcvad-wheels>=2.0.14 ; python_version < "3.13"
 openwakeword>=0.6.0
 faster-whisper>=1.0.0
 piper-tts>=1.2.0

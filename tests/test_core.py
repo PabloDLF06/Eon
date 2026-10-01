@@ -424,6 +424,16 @@ class TestVoiceDsp:
 
 
 class TestBargeIn:
+    def test_energy_fallback_without_optional_vad_backends(self, monkeypatch):
+        from core.barge_in import VoiceActivityDetector
+
+        monkeypatch.setitem(sys.modules, "webrtcvad", None)
+        monkeypatch.setitem(sys.modules, "silero_vad", None)
+        vad = VoiceActivityDetector()
+        assert vad.backend == "energy"
+        assert vad.is_speech_bytes(bytes(960)) is False
+        assert vad.is_speech([0.5 * math.sin(2 * math.pi * 130 * i / 16000) for i in range(480)]) is True
+
     def test_energy_vad_flags_speech(self):
         from core.barge_in import EnergyVad
 
