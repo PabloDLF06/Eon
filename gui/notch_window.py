@@ -9,8 +9,9 @@ geometría **real** de la ventana, de modo que forma y contenido no pueden
 desincronizarse aunque el compositor se atrase.
 
 Plataforma:
-* Windows: se tocan ``WS_EX_LAYERED`` / ``WS_EX_TRANSPARENT`` / ``WS_EX_NOACTIVATE``
-  con ``ctypes.windll.user32`` para el click-through nativo (spec 2.1).
+* Windows: se tocan ``WS_EX_TRANSPARENT`` / ``WS_EX_NOACTIVATE`` / ``WS_EX_TOOLWINDOW``
+  con ``ctypes.windll.user32`` para el click-through nativo (spec 2.1); el
+  layering lo gestiona Qt (``WA_TranslucentBackground``).
 * Linux/macOS: se usa el equivalente de Qt (``WindowTransparentForInput``), así
   que el desarrollo en otro SO también funciona.
 """
@@ -43,12 +44,17 @@ from gui.notch_layout import (
 from gui.qt_paint import paint_scene
 
 # --- estilos extendidos de Win32 (valores de la SDK) ----------------------- #
+# OJO: los bits de layering/composited NO se tocan aquí: Qt gestiona el
+# layering con WA_TranslucentBackground y fijarlos a mano deja la ventana con
+# alfa 0 (isla invisible). El AST de apply_win32_styles se audita en tests/.
 GWL_EXSTYLE = -20
-WS_EX_LAYERED = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
-WS_EX_COMPOSITED = 0x02000000
+HWND_TOPMOST = -1
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_FRAMECHANGED = 0x0020
 
 #: Aire alrededor de la cápsula para que el halo pueda desbordar sin recortarse.
 _MARGIN_X = 26.0
@@ -57,7 +63,14 @@ _TOP_PAD = 1.0
 
 
 def apply_win32_styles(hwnd: int, transparent: bool) -> bool:
-    """Aplica o retira ``WS_EX_TRANSPARENT`` sobre una ventana ya creada.
+    """Ajusta los estilos extendidos de la ventana y la remata *topmost*.
+
+    El layering lo gestiona Qt (``WA_TranslucentBackground``); tocar aquí los
+    bits de layering/composited dejaría la ventana con alfa 0 (isla invisible).
+    Por eso solo se ajustan ``WS_EX_TOOLWINDOW`` y ``WS_EX_NOACTIVATE`` y,
+    según ``transparent``, ``WS_EX_TRANSPARENT`` (click-through nativo,
+    spec 2.1). El estilo se reescribe únicamente si cambia y se remata con
+    ``SetWindowPos(HWND_TOPMOST, SWP_NOSIZE|SWP_NOMOVE|SWP_FRAMECHANGED)``.
 
     Devuelve ``True`` si tocó algo. Jamás lanza: si ``user32`` no está (otro SO,
     ``ctypes`` recortado) la ventana conserva el comportamiento de Qt y EON sólo
@@ -72,9 +85,20 @@ def apply_win32_styles(hwnd: int, transparent: bool) -> bool:
         if not (getter and setter):  # pragma: no cover - entornos exóticos
             return False
         style = int(getter(int(hwnd), GWL_EXSTYLE))
-        style |= WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_COMPOSITED
-        style = (style | WS_EX_TRANSPARENT) if transparent else (style & ~WS_EX_TRANSPARENT)
-        setter(int(hwnd), GWL_EXSTYLE, style)
+        new_style = style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE
+        new_style = (new_style | WS_EX_TRANSPARENT) if transparent else (new_style & ~WS_EX_TRANSPARENT)
+        if new_style != style:  # reescribir el estilo únicamente si cambia
+            setter(int(hwnd), GWL_EXSTYLE, new_style)
+        # handles como c_void_p: HWND_TOPMOST=-1 se ensancha bien en 32 y 64 bits
+        user32.SetWindowPos(
+            ctypes.c_void_p(int(hwnd)),
+            ctypes.c_void_p(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOMOVE | SWP_FRAMECHANGED,
+        )
         return True
     except (AttributeError, OSError):  # pragma: no cover
         return False
