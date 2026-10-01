@@ -1,0 +1,44 @@
+# Configuración de linting de EON.
+#
+# La selección de reglas es deliberada: el proyecto prioriza "nunca cae" sobre
+# "nunca silencia". Por eso se desactivan las reglas que obligarían a quitar los
+# `except Exception` de los subsistemas de audio/visión/red (spec 7.2 pide
+# envolver cada periférico para que un micro desconectado no mate la app).
+line-length = 120
+target-version = "py310"
+src = ["core", "gui", "safety", "tests", "tools"]
+
+[lint]
+select = [
+  "E",    # pycodestyle
+  "F",    # pyflakes: nombres y argumentos mal, imports sin usar
+  "W",    # warnings
+  "I",    # orden de imports
+  "UP",   # modernizaciones (pep604/585)
+  "B",    # bugbear: errores lógicos frecuentes
+  "C4",   # comprehension limpias
+  "SIM",  # simplificaciones legibles
+  "RUF",
+]
+ignore = [
+  "E501",   # longitud de línea: la doc-string en español necesita aire
+  "B008",   # llamada en valor por defecto: se usa para cargar config de forma perezosa
+  "RUF001", # "string literal contains ambiguous unicode" en texto español
+  "RUF002", # ídem en doc-strings
+  "RUF003", # ídem en comentarios
+  "SIM105", # "use contextlib.suppress": aquí se registra el fallo en el log
+  "SIM108", # el if-ternario no siempre es más claro en bloques de gestión de errores
+  "TRY",    # too-many-* de excepciones: la estrategia de EON es capturar y degradar
+  "BLE",    # blind-except: deliberado en los bordes de hardware
+  "RUF046",  # int() explícito en coordenadas de píxel: documenta la intención
+]
+
+[lint.per-file-ignores]
+"safety/*" = ["E402", "PLR0911", "SIM105", "S110", "BLE001"]
+"tools/*" = ["E402"]
+"tests/*" = ["S101"]
+"config.py" = ["E402", "FBT001", "FBT002"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
