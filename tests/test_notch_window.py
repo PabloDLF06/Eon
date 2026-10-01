@@ -70,19 +70,62 @@ class TestApplyWin32StylesAst:
     def test_forbids_layered_and_composited(self):
         func = _function_node("apply_win32_styles")
         offenders = sorted(_symbols(func) & FORBIDDEN_SYMBOLS)
-        assert not offenders, (
-            f"apply_win32_styles toca bits que Qt gestiona (alfa 0 = isla invisible): {offenders}"
-        )
+        assert not offenders, f"apply_win32_styles toca bits que Qt gestiona (alfa 0 = isla invisible): {offenders}"
 
     def test_only_applies_toolwindow_noactivate_transparent(self):
         func = _function_node("apply_win32_styles")
-        missing = sorted(REQUIRED_SYMBOLS - _symbols(func))
-        assert not missing, f"apply_win32_styles no aplica los estilos que caben: {missing}"
+        styles = {symbol for symbol in _symbols(func) if symbol.startswith("WS_EX_")}
+        assert styles == REQUIRED_SYMBOLS, f"estilos extendidos inesperados o ausentes: {styles ^ REQUIRED_SYMBOLS}"
+
+    def test_rewrites_style_only_if_it_changes(self):
+        func = _function_node("apply_win32_styles")
+        writes = [
+            node
+            for node in ast.walk(func)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "setter"
+        ]
+        assert len(writes) == 1, "debe haber una única escritura del estilo"
+        expected_guard = ast.parse("new_style != style", mode="eval").body
+        guards = [
+            node
+            for node in ast.walk(func)
+            if isinstance(node, ast.If) and ast.dump(node.test) == ast.dump(expected_guard)
+        ]
+        assert len(guards) == 1, "el estilo solo debe reescribirse si new_style != style"
+        assert any(writes[0] is node for stmt in guards[0].body for node in ast.walk(stmt)), (
+            "la escritura del estilo no está dentro de la guarda de cambio"
+        )
 
     def test_finishes_with_setwindowpos_topmost_framechanged(self):
         func = _function_node("apply_win32_styles")
         missing = sorted(TOPMOST_FINISH - _symbols(func))
         assert not missing, f"el remate SetWindowPos no está completo: faltan {missing}"
+        calls = [
+            node
+            for node in ast.walk(func)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "SetWindowPos"
+        ]
+        assert len(calls) == 1, "debe haber un único remate SetWindowPos"
+        call = calls[0]
+        expected_args = ast.parse(
+            "finish(ctypes.c_void_p(int(hwnd)), ctypes.c_void_p(HWND_TOPMOST), "
+            "0, 0, 0, 0, SWP_NOSIZE | SWP_NOMOVE | SWP_FRAMECHANGED)",
+            mode="eval",
+        ).body.args
+        assert not call.keywords
+        assert [ast.dump(arg) for arg in call.args] == [ast.dump(arg) for arg in expected_args], (
+            "SetWindowPos debe reafirmar topmost sin mover ni redimensionar, con FRAMECHANGED"
+        )
+        blocks = [node for node in ast.walk(func) if isinstance(node, ast.Try)]
+        assert any(
+            isinstance(block.body[-2], ast.Expr)
+            and block.body[-2].value is call
+            and isinstance(block.body[-1], ast.Return)
+            and isinstance(block.body[-1].value, ast.Constant)
+            and block.body[-1].value.value is True
+            for block in blocks
+            if len(block.body) >= 2
+        ), "SetWindowPos debe rematar el camino Win32 antes de devolver True"
 
     def test_audit_rejects_the_old_broken_function(self):
         # control negativo: si alguien reintroduce la versión vieja, el test salta
