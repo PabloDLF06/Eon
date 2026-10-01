@@ -1,0 +1,22 @@
+# EON · dependencias completas (las instala install.bat; no hace falta tocar nada a mano)
+# Interfaz y dibujo
+PyQt6>=6.6
+numpy>=1.26
+pillow>=10.2
+
+# Audio: micro, wake word, reconocimiento y voz
+sounddevice>=0.4.6
+webrtcvad-wheels>=2.0.14
+openwakeword>=0.6.0
+faster-whisper>=1.0.0
+piper-tts>=1.2.0
+
+# Visión y control del ratón/teclado
+mss>=9.0
+pyautogui>=0.9.54
+pywin32>=306 ; sys_platform == "win32"
+pynput>=1.7.6
+
+# Diagnóstico y pruebas (el auto-mejorador ejecuta pytest antes de fusionar)
+psutil>=5.9
+pytest>=8.0

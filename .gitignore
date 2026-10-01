@@ -1,0 +1,24 @@
+# Entorno virtual y bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# Herramientas
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Datos de ejecución: son privados por diseño y nunca se suben a Git
+logs/
+workspace/
+*.log
+
+# Ajustes locales del usuario (crear settings.json si hace falta; ver README)
+
+# Sistema operativo
+Thumbs.db
+Desktop.ini
+.DS_Store
