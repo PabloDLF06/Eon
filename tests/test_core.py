@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 import time
 from datetime import datetime
@@ -870,6 +871,27 @@ class TestIntentRouting:
         assert "español" in text
         assert "sin markdown" in text
 
+
+class TestGuiSmoke:
+    """La GUI de verdad, en un subproceso aislado (un fallo de Qt no debe tumbar pytest)."""
+
+    def test_states_paint_without_exceptions(self):
+        import subprocess
+
+        script = ROOT / "tools" / "gui_smoke.py"
+        env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script)], capture_output=True, text=True, timeout=90, env=env, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            pytest.skip("el arranque de Qt excede 90 s en esta máquina")
+        if result.returncode == 90:
+            pytest.skip("PyQt6 no está instalado")
+        combined = (result.stdout or "") + (result.stderr or "")
+        if result.returncode != 0 and ("platform plugin" in combined or "cannot open shared object" in combined or "no Qt platform" in combined):
+            pytest.skip(f"sin plataforma Qt usable aquí: {combined.strip()[:160]}")
+        assert result.returncode == 0, f"gui_smoke falló ({result.returncode}): " + combined[-1500:]
 
 class TestOrchestratorHeadless:
     def build(self):

@@ -18,7 +18,9 @@ Plataforma:
 from __future__ import annotations
 
 import ctypes
+import logging
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import replace
 
@@ -76,6 +78,21 @@ def apply_win32_styles(hwnd: int, transparent: bool) -> bool:
         return True
     except (AttributeError, OSError):  # pragma: no cover
         return False
+
+
+#: El pintado no puede abortar el proceso (en PyQt6 una excepción sin capturar
+#: dentro de paintEvent termina en qFatal/abort: parpadeo y adiós). Se registra
+#: una vez por ráfaga y la isla sigue viva mientras se busca el fallo.
+_paint_errors: dict[str, float] = {}
+
+
+def _log_paint_error(where: str, exc: Exception) -> None:
+    now = time.monotonic()
+    if now - _paint_errors.get(where, -60.0) > 30.0:
+        _paint_errors[where] = now
+        logging.getLogger("eon.gui").error(
+            "fallo pintando %s (%s): %s — la isla seguirá viva; mira logs/eon.log", where, type(exc).__name__, exc, exc_info=exc
+        )
 
 
 class NotchWindow(QWidget):
@@ -306,6 +323,8 @@ class NotchWindow(QWidget):
             snap = replace(self._controller.snapshot(), geometry=self._live_geometry())
             sc = build_scene(snap, screen_width=float(self.width()))
             paint_scene(painter, sc, offset=(-_MARGIN_X, 0.0))
+        except Exception as exc:
+            _log_paint_error("notch", exc)
         finally:
             painter.end()
 

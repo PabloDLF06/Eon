@@ -107,7 +107,7 @@ Los valores posibles están documentados en `config.py` (español, sin rodeos). 
 | «Ollama no responde» | Abre Ollama (icono en la bandeja) y reintenta. EON sigue funcionando como interfaz y oído hasta entonces. |
 | No te oye | Windows → Configuración → Privacidad → Micrófono: permite las apps de escritorio. Prueba `start.bat` otra vez. |
 | «INTEGRIDAD ROTA» al arrancar | Alguien tocó `safety/killswitch.py`. Si fuiste tú: `python tools/attest_killswitch.py`. Si no: no arranques EON y revisa la carpeta. |
-| La isla no aparece | Ejecuta `install.bat` de nuevo; mirando `logs/eon.log` verás el porqué. |
+| La isla no aparece | Ahora `start.bat` se queda en pantalla y te enseña el error exacto si EON no sobrevive al arrancar. Si aun así ves solo el log, pasa `install.bat` de nuevo: todo se repara sin borrar nada. |
 | Modelos a medias | Vuelve a pasar `install.bat`: los `ollama pull` incompletos se reanudan solos. |
 
 El registro vive en `logs/eon.log` (texto plano, español). Cualquier subsistema que falla se degrada y **lo cuenta**: EON prefiere responder «no pude» antes que morirse en silencio.

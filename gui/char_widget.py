@@ -15,6 +15,9 @@ Uso normal desde ``NotchWindow``::
 
 from __future__ import annotations
 
+import logging
+import time
+
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter
 from PyQt6.QtWidgets import QWidget
@@ -70,6 +73,21 @@ def _palette() -> dict[str, str]:
         }
     except Exception:  # pragma: no cover
         return {}
+
+
+#: El pintado no puede abortar el proceso (en PyQt6 una excepción sin capturar
+#: dentro de paintEvent termina en qFatal/abort: parpadeo y adiós). Se registra
+#: una vez por ráfaga y la isla sigue viva mientras se busca el fallo.
+_paint_errors: dict[str, float] = {}
+
+
+def _log_paint_error(where: str, exc: Exception) -> None:
+    now = time.monotonic()
+    if now - _paint_errors.get(where, -60.0) > 30.0:
+        _paint_errors[where] = now
+        logging.getLogger("eon.gui").error(
+            "fallo pintando %s (%s): %s — la isla seguirá viva; mira logs/eon.log", where, type(exc).__name__, exc, exc_info=exc
+        )
 
 
 class CharWidget(QWidget):
@@ -165,6 +183,8 @@ class CharWidget(QWidget):
             box = self._content_box()
             sc = build_scene(self._model.frame, box, self._tuning, self._palette)
             paint_scene(painter, sc)
+        except Exception as exc:
+            _log_paint_error("personaje", exc)
         finally:
             painter.end()
 

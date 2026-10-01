@@ -146,30 +146,32 @@ def paint_scene(painter: QPainter, scene: Scene, offset: tuple[float, float] = (
     sólo cubre lo que ocupa la cápsula, así que restamos el origen de la banda.
     """
     painter.save()
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-    painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-    if offset != (0.0, 0.0):
-        painter.translate(offset[0], offset[1])
-    painter.setCompositionMode(QPainter.CompositionMode.SourceOver)
-    ordered = scene.sorted_shapes()
-    aura = [item for item in ordered if item.z < CLIP_START_Z]
-    content = [item for item in ordered if item.z >= CLIP_START_Z]
-    for item in aura:  # el aura puede desbordar la cápsula
-        if isinstance(item, TextShape):
-            paint_text(painter, item)
-        else:
-            paint_shape(painter, item)
-    if scene.clip:
-        clip = path_from_points(scene.clip, closed=True)
-        if not clip.isEmpty():
-            painter.setClipPath(clip, Qt.ClipOperation.IntersectClip)
-    for item in content:
-        if isinstance(item, TextShape):
-            paint_text(painter, item)
-        else:
-            paint_shape(painter, item)
-    painter.restore()
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        if offset != (0.0, 0.0):
+            painter.translate(offset[0], offset[1])
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        ordered = scene.sorted_shapes()
+        aura = [item for item in ordered if item.z < CLIP_START_Z]
+        content = [item for item in ordered if item.z >= CLIP_START_Z]
+        for item in aura:  # el aura puede desbordar la cápsula
+            if isinstance(item, TextShape):
+                paint_text(painter, item)
+            else:
+                paint_shape(painter, item)
+        if scene.clip:
+            clip = path_from_points(scene.clip, closed=True)
+            if not clip.isEmpty():
+                painter.setClipPath(clip, Qt.ClipOperation.IntersectClip)
+        for item in content:
+            if isinstance(item, TextShape):
+                paint_text(painter, item)
+            else:
+                paint_shape(painter, item)
+    finally:
+        painter.restore()  # ni un fallo a mitad de escena deja el pintor desequilibrado
 
 
 def fill_background(painter: QPainter, color: str = "#000000", alpha: float = 1.0) -> None:

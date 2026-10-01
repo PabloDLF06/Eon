@@ -1,4 +1,4 @@
-"""Glow cianperimetérico de pantalla (spec 2.3).
+"""Glow cian perimetral de pantalla (spec 2.3).
 
 Lienzo translúcido, sin bordes y click-through que cubre todo el escritorio
 virtual. Se enciende cuando EON mira la pantalla (captura de ``mss``), cuando
@@ -16,7 +16,9 @@ Detalles de implementación:
 
 from __future__ import annotations
 
+import logging
 import math
+import time
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, QTimer, pyqtProperty
 from PyQt6.QtGui import QGuiApplication, QPainter
@@ -112,6 +114,21 @@ def glow_scene(
         )
     )
     return Scene(width=width, height=height, shapes=tuple(shapes), meta={"mode": mode, "intensity": intensity})
+
+
+#: El pintado no puede abortar el proceso (en PyQt6 una excepción sin capturar
+#: dentro de paintEvent termina en qFatal/abort: parpadeo y adiós). Se registra
+#: una vez por ráfaga y la isla sigue viva mientras se busca el fallo.
+_paint_errors: dict[str, float] = {}
+
+
+def _log_paint_error(where: str, exc: Exception) -> None:
+    now = time.monotonic()
+    if now - _paint_errors.get(where, -60.0) > 30.0:
+        _paint_errors[where] = now
+        logging.getLogger("eon.gui").error(
+            "fallo pintando %s (%s): %s — la isla seguirá viva; mira logs/eon.log", where, type(exc).__name__, exc, exc_info=exc
+        )
 
 
 class ScreenGlow(QWidget):
@@ -254,6 +271,8 @@ class ScreenGlow(QWidget):
                 scan=self._scan,
             )
             paint_scene(painter, sc)
+        except Exception as exc:
+            _log_paint_error("glow", exc)
         finally:
             painter.end()
 

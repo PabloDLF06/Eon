@@ -575,6 +575,24 @@ class EonOrchestrator:
 # --------------------------------------------------------------------------- #
 
 
+def fatal_dialog(title: str, text: str) -> None:
+    """Muestra un error de arranque aunque no haya consola (pythonw).
+
+    En Windows el diálogo va por user32 (sin depender de que Qt sobreviva);
+    en otro sitio, o si eso fallara, queda el stderr y el registro.
+    """
+    log.error("%s: %s", title, text)
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(None, text, title, 0x00000010)  # MB_ICONERROR
+            return
+        except Exception:  # pragma: no cover
+            pass
+    print(f"[EON] {title}: {text}", file=sys.stderr)
+
+
 def _clip(text: str, width: int) -> str:
     text = (text or "").replace("\n", " ").strip()
     return text if len(text) <= width else text[: max(1, width - 1)] + "…"
@@ -777,6 +795,11 @@ def run_gui(orch: EonOrchestrator) -> int:
 def run_headless(orch: EonOrchestrator) -> int:
     """Modo consola: REPL en español para probar el núcleo sin GUI."""
     orch.start()
+    if sys.stdin is None or not hasattr(sys.stdin, "readline"):
+        # pythonw no tiene consola: decirlo en el log y salir limpio, mejor que morir callado
+        print(json.dumps(orch.status(), ensure_ascii=False, indent=2))
+        orch.shutdown()
+        return 0
     print("EON en modo consola. Escriba una orden ('estado' para el diagnóstico, 'salir' para terminar).")
     try:
         while True:
@@ -832,8 +855,7 @@ def main(argv: list[str] | None = None) -> int:
         orch = EonOrchestrator(allow_voice=not args.no_voice, headless=bool(args.no_gui or args.text))
     except Exception as exc:
         log.exception("no se pudo construir EON")
-        print(f"EON no pudo arrancar: {exc}", file=sys.stderr)
-        print(f"Detalle en el registro: {config.LOG_FILE}", file=sys.stderr)
+        fatal_dialog("EON no pudo arrancar", f"{exc}\n\nDetalle en el registro: {config.LOG_FILE}")
         return 1
 
     # la spec es tajante: con el hash del kill switch roto, no se arranca
@@ -852,9 +874,9 @@ def main(argv: list[str] | None = None) -> int:
         return run_headless(orch)
     try:
         return run_gui(orch)
-    except Exception as exc:  # pythonw no tiene consola: el log es la única voz, y la consola la segunda
+    except Exception as exc:  # pythonw no tiene consola: el diálogo y el log son las únicas voces
         log.exception("la GUI cayó; EON sigue en modo consola")
-        print(f"[EON] La interfaz no arrancó ({exc}); sigo en modo consola.", file=sys.stderr)
+        fatal_dialog("EON — la interfaz no arrancó", f"{exc}\n\nEl detalle completo está en logs\\eon.log.\nSi era la única consola, EON cerrará al avisarte.")
         return run_headless(orch)
 
 
