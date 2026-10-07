@@ -1,7 +1,16 @@
 {
   "notch_auto_hide_enabled": true,
   "notch_auto_hide_seconds": 15,
-  "voice_profile": "pending_selection",
+  "voice_profile": "es_ES-davefx-medium",
+  "voice_settings": {
+    "stt_model": "base",
+    "stt_device": "cpu",
+    "stt_compute_type": "int8",
+    "tts_engine": "piper",
+    "vad_aggressiveness": 2,
+    "sample_rate": 16000,
+    "wake_word_model": "hey_jarvis"
+  },
   "language": "es-ES",
   "model_assignments": {
     "brain": {"provider": "ollama", "model": "qwen3:8b"},

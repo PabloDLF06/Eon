@@ -200,3 +200,172 @@ Se verificó que `model_assignments.brain` en `user_settings.json` ya contenía
 `{"provider": "ollama", "model": "qwen3:8b"}`, coincidiendo con el default de
 Fase 0. No se modificó el archivo; cambia el carácter de la elección, de
 provisional a definitivo, mediante esta confirmación humana documentada.
+
+## 12. Fase 3: voz CPU-only y validación pendiente — 2026-10-07
+
+Por autorización explícita de Pablo, se implementan AcousticDetector,
+WakeWordDetector, VoiceEngine y BargeInDetector en la rama local
+`feature/fase-3-voice-engine`, sin modificar `main`, `core/model_router.py`,
+`safety/`, GUI, visión ni componentes de fases posteriores. Los contratos
+añadidos describen las interfaces implementadas, no una integración real
+completamente validada: la prueba real falló y esta fase no se da por cerrada.
+
+### Dependencias y compatibilidad observada
+
+Se usa el `.venv` existente con Python 3.14.8. Versiones instaladas:
+`sounddevice==0.5.6`, `faster-whisper==1.2.1`, `openwakeword==0.6.0`,
+`webrtcvad-wheels==2.0.14.post1`, `piper-tts==1.8.0` y `numpy==2.5.3`.
+Entre las dependencias transitivas relevantes se instalaron
+`ctranslate2==4.8.2`, `onnxruntime==1.30.0` y `av==19.0.1`.
+`requests==2.34.2` y `pytest==9.1.1` conservan los pins de Fase 0.
+No se instaló PyQt6, mss, pyautogui, onnxruntime-gpu ni dependencias CUDA/cuDNN.
+
+Los pins de sounddevice, faster-whisper y openwakeword se conservan.
+El `webrtcvad==2.0.10` propuesto en Fase 0 compiló en este equipo, pero su
+importación falló porque depende de `pkg_resources`, ausente en el entorno.
+Se sustituyó por `webrtcvad-wheels==2.0.14.post1`, que proporciona el módulo
+`webrtcvad` real e importa correctamente sin introducir setuptools por ese
+motivo. Se añade el pin de NumPy porque se importa directamente en el código.
+Se elige y añade `piper-tts==1.8.0`, disponible como wheel para Windows y
+compatible por importación y síntesis real en este Python; su API permite
+`PiperVoice.load(..., use_cuda=False)` y `synthesize_wav`.
+Referencias: [Piper en PyPI](https://pypi.org/project/piper-tts/1.8.0/),
+[WebRTC VAD wheels](https://pypi.org/project/webrtcvad-wheels/2.0.14.post1/) y
+[API Python de Piper](https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/API_PYTHON.md).
+
+Todas las librerías de voz importaron realmente y `pip check` no detectó
+conflictos declarados. Sounddevice encontró su PortAudio de Windows
+V19.7.0-devel; no hubo que instalar una DLL manualmente. Esto no garantiza
+compatibilidad funcional conjunta: la integración detectó después un fallo
+entre faster-whisper 1.2.1 y PyAV 19.0.1 al decodificar la ruta de un WAV.
+Faster-whisper llama a `av.open(..., metadata_errors="ignore")`; PyAV 19
+eliminó ese argumento. La operación devuelve `""`, registra el error y no
+derriba el proceso. Referencia:
+[changelog oficial de PyAV](https://pyav.basswood.io/docs/stable/development/changelog.html).
+PyAV 18.1.0, con wheel de Windows compatible con Python 3.14, es un candidato
+de corrección todavía no instalado ni validado en esta sesión. No se cambia
+silenciosamente el entorno tras la única ejecución real autorizada.
+
+### CPU-only, modelos y configuración
+
+STT, TTS y wake-word corren exclusivamente en CPU por decisión explícita de
+esta fase, para preservar VRAM Monogamy sin acoplar aún VoiceEngine al
+ModelRouter. No es un olvido del router ni autoriza inferencias GPU externas.
+Whisper se carga con `device="cpu"`, Piper con `use_cuda=False` y las tres
+sesiones ONNX de wake-word con `CPUExecutionProvider`; se rechazan providers
+inesperados. Las cargas son lazy y los modelos/cache se guardan únicamente
+en `.runtime/voice_models/`, ignorado por Git. El runtime no descarga pesos
+automáticamente: esta sesión realizó su preparación explícita.
+
+Se selecciona STT `base`, `cpu`, `int8`, para comenzar con un modelo multilingüe
+compacto y cuantizado, sin atribuirle todavía precisión o latencia medidas
+en el round-trip, que no llegó a ejecutar inferencia por el fallo de PyAV.
+La configuración valida estrictamente las siete claves de `voice_settings`:
+modelo permitido, CPU, int8, Piper, VAD entero de 0 a 3, 16000 Hz y un ID
+built-in real de wake-word. El getter devuelve una copia independiente.
+
+El catálogo real de Piper consultado contiene estas voces españolas:
+`es_ES-carlfm-x_low`, `es_ES-davefx-medium`, `es_ES-mls_10246-low`,
+`es_ES-mls_9972-low`, `es_ES-sharvard-medium`, `es_MX-ald-medium`,
+`es_MX-ald-x_low` y `es_MX-claude-high`. Se elige
+`es_ES-davefx-medium`, es_ES medium de un único hablante, como equilibrio
+inicial de calidad/tamaño sin selección adicional de speaker. Se sustituye
+`voice_profile: pending_selection` por ese ID real. Sus pesos ONNX descargados
+ocupan 63.201.294 bytes; la síntesis real generó un WAV válido mono de 22050 Hz.
+Catálogo: [voces Piper](https://huggingface.co/rhasspy/piper-voices/resolve/main/voices.json).
+
+La versión instalada de openwakeword enumera realmente `alexa`, `hey_mycroft`,
+`hey_jarvis`, `hey_rhasspy`, `timer` y `weather`. Se elige `hey_jarvis` de forma
+PROVISIONAL, no como equivalente de «Hey Eon»: detecta una expresión inglesa.
+Se prepararon solo ese clasificador ONNX y sus dos extractores de features.
+El modelo custom «Hey Eon» requiere entrenamiento y validación en una fase
+posterior. Referencia: [openWakeWord](https://github.com/dscripka/openWakeWord).
+La escucha real de dos segundos quedó sin ejecutar debido al fallo anterior
+del round-trip; los tests unitarios sí cubren detección y silencio simulados.
+
+### Resultado real, límites y deuda
+
+La única integración real autorizada se ejecutó una vez: grabó 3 s reales
+(48000 muestras mono int16 a 16000 Hz), obtuvo 0 frames con voz según VAD
+y RMS 0,0000146337. Cargó Whisper real en CPU y Piper real con
+`CPUExecutionProvider`. Piper sintetizó «Hola Pablo, soy Eon, y mi voz ya
+funciona en local.» en `.runtime/fase3_tts_sample.wav`: 129580 bytes,
+2,937324263 s. El resultado de transcripción fue `""` por la incompatibilidad
+descrita, no una transcripción válida ni una prueba de silencio.
+
+NVIDIA GPU 0 mostró 0/8188 MiB antes y después, y Ollama permaneció sin modelos
+residentes. Son snapshots, no mediciones continuas de picos; la evidencia
+adicional del dispositivo CPU de Whisper y del provider CPU de Piper confirma
+la configuración real de los modelos que llegaron a cargarse. No se afirma
+haber cargado el wake-word real en esta integración.
+
+La suite sin hardware pasó 167 tests, omitiendo las dos integraciones reales.
+La integración de voz falló con 1 test fallido y 100 DeprecationWarning de
+sounddevice por asignar `shape` sobre arrays NumPy 2.5; no se ocultaron esas
+advertencias. Falta corregir/pinear PyAV y validar de nuevo el round-trip y
+la escucha wake-word con autorización explícita para repetir la prueba real.
+
+Además: BargeInDetector usa VAD y energía, sin cancelación de eco acústico ni
+identificación de hablante; el propio TTS reproducido por altavoces puede
+producir una falsa interrupción. No se implementa playback, su cancelación,
+GUI ni Voice Fingerprint Lock. La exclusión del micrófono solo coordina los
+detectores de este proceso, no aplicaciones externas. El cache Hugging Face
+funciona sin symlinks en este Windows, con posibles copias adicionales en
+disco; no se cambió el modo de desarrollador ni se elevó el proceso.
+
+No se hace commit ni push de una fase que no ha superado su validación real.
+Se conservan los cambios locales y la evidencia para corregir el fallo sin
+repetir automáticamente la integración ni avanzar a Fase 4.
+
+## 13. Fase 3: bypass de PyAV con entrada NumPy y alcance WAV PCM — 2026-10-07
+
+Pablo decidió explícitamente corregir el fallo original
+`TypeError: open() got an unexpected keyword argument 'metadata_errors'`
+sin downgradear PyAV ni modificar las dependencias existentes. Faster-whisper
+1.2.1 llama a `decode_audio` cuando recibe una ruta o un objeto file-like,
+y ese decoder invoca un argumento eliminado en PyAV 19.0.1. Si recibe un
+ndarray NumPy, omite ese decoder; se adopta esta vía de entrada directa.
+
+Se descarta pinear PyAV 18.1.0 en esta corrección por decisión de Pablo de
+mantener el entorno y evitar el riesgo de no disponer de una wheel compatible
+con Python 3.14.8/Windows, que obligaría a compilar con FFmpeg nativo. Ese
+riesgo es un criterio preventivo, no un fallo observado: en la sesión anterior
+se encontró una wheel Windows/Python 3.14 publicada para 18.1.0, pero no se
+instaló ni se validó en este entorno. No se afirma que dicha wheel no exista.
+PyAV instalado sigue en 19.0.1 y faster-whisper en 1.2.1; no se cambian pins,
+se instalan paquetes ni se parchea código de terceros en `.venv`.
+
+VoiceEngine lee los WAV con el módulo estándar `wave`, admite PCM sin
+comprimir de 8/16/24/32 bits y normaliza a float32 entre -1 y 1 (int16 dividido
+entre 32768.0). Promedia los canales a mono y remuestrea a 16000 Hz mediante
+interpolación lineal NumPy en una utilidad privada con type hints y docstring.
+Este remuestreador básico se adopta para STT, no para calidad hi-fi: no tiene
+filtro antialias y mantiene la última muestra en el límite final.
+
+También se aceptan arrays, buffers PCM int16 y la pareja `(sample_rate, audio)`
+devuelta por AcousticDetector.record; sin frecuencia explícita se asumen
+16000 Hz. Whisper siempre recibe un ndarray mono float32 a 16000 Hz, nunca
+una ruta ni un objeto file-like, por lo que la transcripción no pasa por PyAV.
+
+Solo-WAV PCM es un alcance consciente de Fase 3 para entradas de archivo.
+No se admiten MP3/OGG ni formatos comprimidos (tampoco WAV float). Su soporte
+futuro exige resolver la incompatibilidad PyAV/faster-whisper de forma
+explícita, validando una versión compatible y una wheel real para el Python
+en uso, como decisión separada y documentada. No se incorpora ese soporte
+implícitamente en esta corrección ni se añaden scipy/librosa.
+
+Pablo autorizó una única repetición de la integración real tras el arreglo,
+incluida la escucha wake-word pendiente. Se conserva la sección 12 y la
+evidencia de la ejecución fallida, sin reescribirlas. El commit/push de la
+rama queda condicionado a superar esta integración y la suite sin hardware.
+
+La repetición autorizada pasó: Whisper CPU transcribió realmente
+«Hola Pablo, soy Ian y mi voz ya funciona en local.» a partir del WAV de Piper
+de 22050 Hz convertido a un array mono float32 de 16000 Hz. No se corrige
+«Ian» a «Eon» en la evidencia. La escucha real de `hey_jarvis` durante 2 s
+devolvió `False` sin error; los tres modelos ONNX informaron exclusivamente
+CPUExecutionProvider. La suite con integración terminó con 190 tests
+aprobados, 1 omitido (Ollama) y 124 DeprecationWarning de sounddevice/NumPy.
+NVIDIA mostró 0/8188 MiB antes y después y Ollama quedó vacío. La deuda del
+decoder PyAV sigue vigente para formatos fuera del alcance WAV PCM; el
+bypass resuelve la entrada implementada, no repara la librería de terceros.

@@ -13,7 +13,10 @@ psutil==7.2.2
 pynvml==13.0.1
 sqlite-vec==0.1.9
 requests==2.34.2
-webrtcvad==2.0.10
+webrtcvad-wheels==2.0.14.post1
+piper-tts==1.8.0
+numpy==2.5.3
 
 # Review and adjust these versions during the real installation phase; do not install now.
-# Voice Fingerprint Lock and Piper TTS libraries remain undecided until their respective phases.
+# Piper TTS and the maintained WebRTC VAD wheel were validated in Phase 3.
+# Voice Fingerprint Lock remains undecided until its phase.

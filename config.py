@@ -15,6 +15,8 @@ class ConfigurationError(ValueError):
 
 SETTINGS_PATH = Path(__file__).resolve().parent / "user_settings.json"
 REQUIRED_ROLES = ("brain", "vision", "coding", "embeddings", "reasoning_auditor")
+SUPPORTED_STT_MODELS = ("tiny", "base", "small", "medium", "large-v3", "large-v3-turbo")
+SUPPORTED_WAKE_WORDS = ("alexa", "hey_mycroft", "hey_jarvis", "hey_rhasspy", "timer", "weather")
 
 
 def _load_settings(path: Path) -> dict[str, Any]:
@@ -73,6 +75,25 @@ def _load_settings(path: Path) -> dict[str, Any]:
             raise invalid(f"cost_limits.{field} debe ser un número finito no negativo")
     if not isinstance(limits.get("on_limit_reached"), str) or not limits["on_limit_reached"].strip():
         raise invalid("cost_limits.on_limit_reached debe ser un texto no vacío")
+    voice = settings.get("voice_settings")
+    required_voice_fields = {
+        "stt_model", "stt_device", "stt_compute_type", "tts_engine",
+        "vad_aggressiveness", "sample_rate", "wake_word_model",
+    }
+    if not isinstance(voice, dict) or set(voice) != required_voice_fields:
+        raise invalid("voice_settings debe contener exactamente las siete claves de voz requeridas")
+    allowed_values = {
+        "stt_model": SUPPORTED_STT_MODELS, "stt_device": ("cpu",),
+        "stt_compute_type": ("int8",), "tts_engine": ("piper",),
+        "wake_word_model": SUPPORTED_WAKE_WORDS,
+    }
+    for field, allowed in allowed_values.items():
+        if not isinstance(voice[field], str) or voice[field] not in allowed:
+            raise invalid(f"voice_settings.{field} debe ser uno de: {', '.join(allowed)}")
+    if type(voice["vad_aggressiveness"]) is not int or voice["vad_aggressiveness"] not in range(4):
+        raise invalid("voice_settings.vad_aggressiveness debe ser un entero entre 0 y 3")
+    if type(voice["sample_rate"]) is not int or voice["sample_rate"] != 16000:
+        raise invalid("voice_settings.sample_rate debe ser el entero 16000 en Fase 3")
     return settings
 
 
@@ -108,3 +129,8 @@ def get_language() -> str:
 def get_voice_profile() -> str:
     """Return the stored profile selection without implementing voice features."""
     return _SETTINGS["voice_profile"]
+
+
+def get_voice_settings() -> dict[str, str | int]:
+    """Return an independent copy of strictly validated CPU-only voice settings."""
+    return deepcopy(_SETTINGS["voice_settings"])

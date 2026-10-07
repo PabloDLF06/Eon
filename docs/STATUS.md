@@ -250,3 +250,162 @@ Pablo autorizó explícitamente el cierre mediante merge `--no-ff` a `main`,
 el tag anotado `fase-2-completa` y la eliminación de la rama de fase después
 de publicar y verificar ambos. Fase 3 no se inicia: sigue pendiente de una
 nueva confirmación explícita de Pablo.
+
+## Fase 3 en curso: integración real fallida — 2026-10-07
+
+Por autorización explícita de Pablo, se trabaja en
+`feature/fase-3-voice-engine`, creada desde el `main` limpio en
+`744cc8159a64110ebec300c477969a4d2279df79`, que contiene el merge de Fase 2.
+Se leyeron completos STATUS.md y CONTRACTS.md antes de escribir código.
+`main`, `core/model_router.py`, `safety/`, GUI y visión permanecen sin cambios.
+No se ha hecho commit, push ni merge: los cambios de esta fase siguen locales
+y el árbol de trabajo NO está limpio.
+
+Se implementaron los tres módulos `core/acoustic_detector.py` (incluye
+WakeWordDetector), `core/voice_engine.py` y `core/barge_in.py`, sus tres suites
+unitarias y un test separado de integración real. Configuración y contratos
+se ampliaron con `get_voice_settings` y las interfaces de voz. Los tests
+unitarios utilizan hardware/modelos simulados; no sustituyen la integración.
+
+En el `.venv` existente, Python 3.14.8, se instalaron sounddevice 0.5.6,
+faster-whisper 1.2.1, openwakeword 0.6.0, webrtcvad-wheels 2.0.14.post1,
+piper-tts 1.8.0 y NumPy 2.5.3; transitivas relevantes: CTranslate2 4.8.2,
+ONNX Runtime CPU 1.30.0 y PyAV 19.0.1. Requests 2.34.2 y pytest 9.1.1
+conservan sus versiones. Se sustituyó el WebRTC VAD clásico por su distribución
+de wheels porque la importación del clásico requería `pkg_resources`.
+Piper y NumPy se añadieron pineados. No se instalaron dependencias de fases
+posteriores. Las importaciones reales y PortAudio de Windows funcionaron;
+`pip check` pasó, pero la compatibilidad funcional conjunta sigue pendiente.
+Los motivos, fuentes y detalles se registran en DECISIONS.md, sección 12.
+
+Configuración seleccionada: Whisper `base` en CPU/int8; Piper
+`es_ES-davefx-medium`; VAD 2 y 16000 Hz. Wake-word `hey_jarvis` es PROVISIONAL
+y en inglés, hasta entrenar/validar un modelo custom «Hey Eon» posteriormente.
+Los seis IDs built-in enumerados son alexa, hey_mycroft, hey_jarvis,
+hey_rhasspy, timer y weather. Voz CPU-only es una decisión explícita para
+preservar VRAM Monogamy sin acoplar todavía estos módulos al router.
+
+Resultados comprobados de esta sesión:
+
+```text
+Suite completa sin hardware: 167 passed, 2 skipped in 2.21s
+Integración real de voz (una sola ejecución): 1 failed, 100 warnings in 10.00s
+Fallo: TypeError: open() got an unexpected keyword argument 'metadata_errors'
+```
+
+La integración enumeró micrófonos y grabó 3 s reales (48000 muestras mono
+int16 a 16000 Hz); VAD real detectó 0 frames con voz, con RMS 0,0000146337.
+Whisper cargó en CPU y Piper informó únicamente CPUExecutionProvider.
+La síntesis real de «Hola Pablo, soy Eon, y mi voz ya funciona en local.»
+produjo `.runtime/fase3_tts_sample.wav`, 129580 bytes, mono a 22050 Hz,
+duración 2,937324263 s, disponible para escuchar manualmente.
+
+La transcripción de ese WAV devolvió `""` con un error controlado y logging:
+faster-whisper 1.2.1 usa `metadata_errors` al abrir audio y PyAV 19.0.1
+ya no admite ese argumento. No hubo round-trip correcto. La integración se
+interrumpió antes de cargar el wake-word real y de realizar su escucha de 2 s;
+esas comprobaciones quedan pendientes. No se repitió la ejecución real.
+Se necesita corregir/pinear una versión compatible de PyAV y autorización
+de Pablo para repetir la integración, limitada en el encargo a una ejecución.
+
+Snapshots reales NVIDIA: GPU 0, RTX 4060 Laptop, antes 0/8188 MiB y después
+0/8188 MiB. El basal observado en esta sesión fue 0 MiB, no el aproximado
+de 8 MiB del encargo. Ollama quedó sin modelos residentes. La búsqueda
+de TODO/placeholder/stub/mock en core/ no encontró coincidencias.
+La evidencia local ignorada por Git está en `.runtime/fase3_voice_integration.json`,
+`.runtime/fase3_integration.xml` y `.runtime/fase3_mocked.xml`.
+
+### Deuda técnica conocida de voz — 2026-10-07
+
+- Incompatibilidad funcional faster-whisper/PyAV descrita arriba: bloquea
+  la validación real. PyAV 18.1.0 es candidato sin instalar ni validar aún.
+- Sounddevice produce DeprecationWarning al asignar `shape` en NumPy 2.5;
+  revisar su compatibilidad al actualizar estas dependencias.
+- Wake-word inglés provisional; no se detecta todavía una frase custom
+  «Hey Eon» y la prueba de escucha real de silencio sigue pendiente.
+- Barge-in no dispone de cancelación de eco ni identificación de hablante:
+  el audio propio por altavoces puede activar una interrupción falsa. No se
+  implementa playback ni su cancelación en esta fase.
+- Pesos descargados/cache locales ignorados requieren preparación explícita
+  en otra instalación; Hugging Face advierte de copias adicionales al no
+  disponer de symlinks en este Windows.
+
+Fase 3 NO está completa. No se publica una fase con validación real fallida,
+no se borra la rama, no se hace merge a main y no se inicia Fase 4.
+
+## Fase 3 completa: integración real corregida por entrada NumPy — 2026-10-07
+
+Esta entrada posterior actualiza el estado de Fase 3 sin reescribir el registro
+de la integración fallida. Pablo autorizó explícitamente el bypass del decoder
+PyAV y una única repetición real tras el arreglo, realizada en
+`feature/fase-3-voice-engine`. Se leyeron completos STATUS.md y CONTRACTS.md
+antes de modificar código. No se cambió ninguna dependencia, ningún pin ni
+el código de terceros: PyAV sigue en 19.0.1 y faster-whisper en 1.2.1.
+
+VoiceEngine lee WAV PCM con `wave`, normaliza a float32, promedia canales y
+remuestrea a 16000 Hz mediante interpolación lineal NumPy. Whisper recibe
+siempre un array, nunca una ruta ni un objeto file-like; no usa `decode_audio`.
+Se admite PCM sin comprimir de 8/16/24/32 bits y arrays/buffers, incluida la
+pareja `(sample_rate, audio)` de AcousticDetector.record. MP3/OGG, WAV
+comprimido/float y objetos file-like quedan fuera del alcance. El remuestreador
+básico no aplica filtro antialias y no se presenta como una solución hi-fi.
+Los contratos reflejan estos límites y DECISIONS.md, sección 13, registra
+la decisión y el motivo de no downgradear PyAV.
+
+Resultados reales de la única repetición autorizada tras el arreglo:
+
+- Micrófono real: 3 s, 48000 muestras mono int16 a 16000 Hz. VAD real detectó
+  0 frames con voz; RMS 0,0003670703. Se esperaba silencio y no es un fallo.
+- STT real: Whisper `base`, CPU/int8; TTS real: `es_ES-davefx-medium`,
+  exclusivamente CPUExecutionProvider. Texto sintetizado: «Hola Pablo, soy Eon,
+  y mi voz ya funciona en local.»
+- Texto REAL transcrito: «Hola Pablo, soy Ian y mi voz ya funciona en local.»
+  Es el resultado sin corregir el nombre ni sustituirlo por el texto original.
+  El round-trip pasó: texto no vacío y ningún error de transcripción.
+- Wake-word real `hey_jarvis`: disponible, sus tres sesiones ONNX informaron
+  únicamente CPUExecutionProvider; `listen_once(2.0)` devolvió `False` en
+  silencio, sin error ni crash. Continúa siendo PROVISIONAL hasta «Hey Eon».
+- WAV actual `.runtime/fase3_tts_sample.wav`: 125996 bytes, mono PCM int16
+  a 22050 Hz, duración 2,856054422 s, generado realmente y no reproducido
+  automáticamente. Su tamaño/duración corresponden a esta nueva síntesis.
+- NVIDIA GPU 0, RTX 4060 Laptop: antes 0/8188 MiB, después 0/8188 MiB.
+  Ollama quedó sin modelos residentes; la voz no cargó modelos en Ollama.
+
+```text
+pytest tests/ -v -s, EON_RUN_VOICE_INTEGRATION=1:
+190 passed, 1 skipped, 124 warnings in 13.33s
+pytest tests/ -q -rs, sin variables de integración:
+189 passed, 2 skipped in 2.32s
+```
+
+La suite mantiene los 167 casos sin hardware anteriores y añade 22 casos
+para la corrección: lectura PCM real, normalización de muestras, estéreo,
+frecuencias 8000/16000/22050/32000/48000, arrays/buffers y su frecuencia,
+interpolación, rechazo de archivos inválidos/comprimidos/vacíos/truncados y
+garantía de no llamar a PyAV. En la suite con hardware solo se omitió la
+integración Ollama; en la suite sin hardware se omitieron ambas integraciones.
+Las 124 advertencias son DeprecationWarning de sounddevice con NumPy 2.5;
+no se suprimieron y siguen siendo deuda técnica, sin fallos de los tests.
+
+Evidencia local ignorada por Git:
+`.runtime/fase3_voice_integration_corrected.json`,
+`.runtime/fase3_corrected_pytest_output.txt`,
+`.runtime/fase3_corrected_integration.log`,
+`.runtime/fase3_corrected_integration.xml`,
+`.runtime/fase3_corrected_mocked_output.txt` y
+`.runtime/fase3_corrected_mocked.xml`. La evidencia JSON/XML de la ejecución
+fallida anterior se conserva separada, sin sobrescribirla.
+
+Fase 3 SÍ está completa en su alcance CPU-only, con contratos, tests y
+validación real. Persisten las limitaciones documentadas: decoder PyAV
+incompatible fuera de la vía implementada, remuestreo básico, wake-word
+inglés provisional, advertencias sounddevice/NumPy y barge-in sin cancelación
+de eco ni identificación de hablante. No se afirma haber implementado playback,
+GUI ni Voice Fingerprint Lock.
+
+Pablo autorizó el commit de cierre con mensaje
+`feat: Fase 3 - Voice Engine STT/TTS, VAD, wake-word y barge-in sobre CPU`
+y el push únicamente de `feature/fase-3-voice-engine` tras estas verificaciones.
+`main`, `core/model_router.py`, `safety/`, GUI y visión siguen sin modificaciones.
+No se hace merge a main ni se elimina la rama. Fase 4 no se inicia sin una
+nueva confirmación explícita de Pablo tras revisar la integración exitosa.
