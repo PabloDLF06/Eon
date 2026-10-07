@@ -63,3 +63,30 @@ Un segundo commit exclusivamente documental registra este cierre posterior al
 primer push, sin reescribir el commit inicial. Al cierre, ambos commits quedan
 subidos a la misma rama y el árbol de trabajo está limpio. `.runtime/.gitkeep`
 está efectivamente trackeado pese al patrón de exclusión de `.runtime/*`.
+
+## Cierre posterior solicitado por Pablo — 2026-10-07
+
+- A petición de Pablo, se corrigió la identidad de autor y committer de los
+  commits de Fase 0 a `PabloDLF06`, manteniendo el correo privado
+  `124751066+PabloDLF06@users.noreply.github.com`.
+- Se creó `main` y Pablo la fijó manualmente como rama por defecto en GitHub.
+  Se confirmó mediante `git ls-remote --symref origin HEAD`, que muestra
+  `refs/heads/main`.
+- Por decisión explícita de Pablo, los tres commits anteriores de Fase 0 se
+  compactaron mediante squash en un único commit raíz:
+  `06ca4d31799ca3e9778ee9db9b3efe72d90ac1ee`, con el mensaje
+  `chore: Fase 0 - scaffolding inicial del proyecto EON`. La finalidad es
+  eliminar cualquier rastro del nombre legal completo del historial Git de
+  Fase 0. El árbol de archivos del squash es exactamente el mismo que el de
+  `main` antes de la operación; solo se compactó el historial.
+- Se eliminó `feature/fase-0-scaffolding` local y remotamente después de confirmar
+  que todo su contenido estaba incorporado a `main`. También se retiró la
+  referencia local de respaldo `refs/original/refs/heads/feature/fase-0-scaffolding`
+  que conservaba el historial anterior.
+- Se comprobó la ausencia del nombre legal completo en `git log -p main` y en
+  `git log --all -p`. La actualización de `main` usó `--force-with-lease`.
+- Este registro añade el commit documental de cierre al commit único de
+  scaffolding. Al finalizar, `main` está sincronizada con `origin/main` y el
+  árbol de trabajo está limpio. Las entradas anteriores se conservan como
+  registro histórico de sesiones previas; este apartado refleja el estado actual.
+- No se ha iniciado la Fase 1. Sigue pendiente de confirmación humana explícita.
