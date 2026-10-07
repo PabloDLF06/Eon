@@ -1,7 +1,24 @@
 {
   "notch_auto_hide_enabled": true,
   "notch_auto_hide_seconds": 15,
-  "voice_profile": "pending_selection",
+  "voice_profile": "es_ES-sharvard-medium",
+  "voice_settings": {
+    "stt_model": "base",
+    "stt_device": "cpu",
+    "stt_compute_type": "int8",
+    "tts_engine": "piper",
+    "vad_aggressiveness": 2,
+    "sample_rate": 16000,
+    "wake_word_model": "hey_jarvis",
+    "tts_speaker_id": 0,
+    "tts_length_scale": 1.15,
+    "tts_noise_scale": 0.7337,
+    "tts_noise_w_scale": 0.88,
+    "tts_pronunciation_aliases": {
+      "Eon": "Eeeón",
+      "EON": "Eeeón"
+    }
+  },
   "language": "es-ES",
   "model_assignments": {
     "brain": {"provider": "ollama", "model": "qwen3:8b"},

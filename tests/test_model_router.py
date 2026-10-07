@@ -462,7 +462,7 @@ def test_config_loads_once_and_accessors_return_copies(settings_data: dict) -> N
         limits = module.get_cost_limits()
         limits["daily_usd_cap"] = 999
         assert module.get_cost_limits()["daily_usd_cap"] == 2.0
-        assert module.get_language() == "es-ES" and module.get_voice_profile() == "pending_selection"
+        assert module.get_language() == "es-ES" and module.get_voice_profile() == settings_data["voice_profile"]
         opened.assert_called_once()
 
 

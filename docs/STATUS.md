@@ -250,3 +250,292 @@ Pablo autorizó explícitamente el cierre mediante merge `--no-ff` a `main`,
 el tag anotado `fase-2-completa` y la eliminación de la rama de fase después
 de publicar y verificar ambos. Fase 3 no se inicia: sigue pendiente de una
 nueva confirmación explícita de Pablo.
+
+## Fase 3 en curso: integración real fallida — 2026-10-07
+
+Por autorización explícita de Pablo, se trabaja en
+`feature/fase-3-voice-engine`, creada desde el `main` limpio en
+`744cc8159a64110ebec300c477969a4d2279df79`, que contiene el merge de Fase 2.
+Se leyeron completos STATUS.md y CONTRACTS.md antes de escribir código.
+`main`, `core/model_router.py`, `safety/`, GUI y visión permanecen sin cambios.
+No se ha hecho commit, push ni merge: los cambios de esta fase siguen locales
+y el árbol de trabajo NO está limpio.
+
+Se implementaron los tres módulos `core/acoustic_detector.py` (incluye
+WakeWordDetector), `core/voice_engine.py` y `core/barge_in.py`, sus tres suites
+unitarias y un test separado de integración real. Configuración y contratos
+se ampliaron con `get_voice_settings` y las interfaces de voz. Los tests
+unitarios utilizan hardware/modelos simulados; no sustituyen la integración.
+
+En el `.venv` existente, Python 3.14.8, se instalaron sounddevice 0.5.6,
+faster-whisper 1.2.1, openwakeword 0.6.0, webrtcvad-wheels 2.0.14.post1,
+piper-tts 1.8.0 y NumPy 2.5.3; transitivas relevantes: CTranslate2 4.8.2,
+ONNX Runtime CPU 1.30.0 y PyAV 19.0.1. Requests 2.34.2 y pytest 9.1.1
+conservan sus versiones. Se sustituyó el WebRTC VAD clásico por su distribución
+de wheels porque la importación del clásico requería `pkg_resources`.
+Piper y NumPy se añadieron pineados. No se instalaron dependencias de fases
+posteriores. Las importaciones reales y PortAudio de Windows funcionaron;
+`pip check` pasó, pero la compatibilidad funcional conjunta sigue pendiente.
+Los motivos, fuentes y detalles se registran en DECISIONS.md, sección 12.
+
+Configuración seleccionada: Whisper `base` en CPU/int8; Piper
+`es_ES-davefx-medium`; VAD 2 y 16000 Hz. Wake-word `hey_jarvis` es PROVISIONAL
+y en inglés, hasta entrenar/validar un modelo custom «Hey Eon» posteriormente.
+Los seis IDs built-in enumerados son alexa, hey_mycroft, hey_jarvis,
+hey_rhasspy, timer y weather. Voz CPU-only es una decisión explícita para
+preservar VRAM Monogamy sin acoplar todavía estos módulos al router.
+
+Resultados comprobados de esta sesión:
+
+```text
+Suite completa sin hardware: 167 passed, 2 skipped in 2.21s
+Integración real de voz (una sola ejecución): 1 failed, 100 warnings in 10.00s
+Fallo: TypeError: open() got an unexpected keyword argument 'metadata_errors'
+```
+
+La integración enumeró micrófonos y grabó 3 s reales (48000 muestras mono
+int16 a 16000 Hz); VAD real detectó 0 frames con voz, con RMS 0,0000146337.
+Whisper cargó en CPU y Piper informó únicamente CPUExecutionProvider.
+La síntesis real de «Hola Pablo, soy Eon, y mi voz ya funciona en local.»
+produjo `.runtime/fase3_tts_sample.wav`, 129580 bytes, mono a 22050 Hz,
+duración 2,937324263 s, disponible para escuchar manualmente.
+
+La transcripción de ese WAV devolvió `""` con un error controlado y logging:
+faster-whisper 1.2.1 usa `metadata_errors` al abrir audio y PyAV 19.0.1
+ya no admite ese argumento. No hubo round-trip correcto. La integración se
+interrumpió antes de cargar el wake-word real y de realizar su escucha de 2 s;
+esas comprobaciones quedan pendientes. No se repitió la ejecución real.
+Se necesita corregir/pinear una versión compatible de PyAV y autorización
+de Pablo para repetir la integración, limitada en el encargo a una ejecución.
+
+Snapshots reales NVIDIA: GPU 0, RTX 4060 Laptop, antes 0/8188 MiB y después
+0/8188 MiB. El basal observado en esta sesión fue 0 MiB, no el aproximado
+de 8 MiB del encargo. Ollama quedó sin modelos residentes. La búsqueda
+de TODO/placeholder/stub/mock en core/ no encontró coincidencias.
+La evidencia local ignorada por Git está en `.runtime/fase3_voice_integration.json`,
+`.runtime/fase3_integration.xml` y `.runtime/fase3_mocked.xml`.
+
+### Deuda técnica conocida de voz — 2026-10-07
+
+- Incompatibilidad funcional faster-whisper/PyAV descrita arriba: bloquea
+  la validación real. PyAV 18.1.0 es candidato sin instalar ni validar aún.
+- Sounddevice produce DeprecationWarning al asignar `shape` en NumPy 2.5;
+  revisar su compatibilidad al actualizar estas dependencias.
+- Wake-word inglés provisional; no se detecta todavía una frase custom
+  «Hey Eon» y la prueba de escucha real de silencio sigue pendiente.
+- Barge-in no dispone de cancelación de eco ni identificación de hablante:
+  el audio propio por altavoces puede activar una interrupción falsa. No se
+  implementa playback ni su cancelación en esta fase.
+- Pesos descargados/cache locales ignorados requieren preparación explícita
+  en otra instalación; Hugging Face advierte de copias adicionales al no
+  disponer de symlinks en este Windows.
+
+Fase 3 NO está completa. No se publica una fase con validación real fallida,
+no se borra la rama, no se hace merge a main y no se inicia Fase 4.
+
+## Fase 3 completa: integración real corregida por entrada NumPy — 2026-10-07
+
+Esta entrada posterior actualiza el estado de Fase 3 sin reescribir el registro
+de la integración fallida. Pablo autorizó explícitamente el bypass del decoder
+PyAV y una única repetición real tras el arreglo, realizada en
+`feature/fase-3-voice-engine`. Se leyeron completos STATUS.md y CONTRACTS.md
+antes de modificar código. No se cambió ninguna dependencia, ningún pin ni
+el código de terceros: PyAV sigue en 19.0.1 y faster-whisper en 1.2.1.
+
+VoiceEngine lee WAV PCM con `wave`, normaliza a float32, promedia canales y
+remuestrea a 16000 Hz mediante interpolación lineal NumPy. Whisper recibe
+siempre un array, nunca una ruta ni un objeto file-like; no usa `decode_audio`.
+Se admite PCM sin comprimir de 8/16/24/32 bits y arrays/buffers, incluida la
+pareja `(sample_rate, audio)` de AcousticDetector.record. MP3/OGG, WAV
+comprimido/float y objetos file-like quedan fuera del alcance. El remuestreador
+básico no aplica filtro antialias y no se presenta como una solución hi-fi.
+Los contratos reflejan estos límites y DECISIONS.md, sección 13, registra
+la decisión y el motivo de no downgradear PyAV.
+
+Resultados reales de la única repetición autorizada tras el arreglo:
+
+- Micrófono real: 3 s, 48000 muestras mono int16 a 16000 Hz. VAD real detectó
+  0 frames con voz; RMS 0,0003670703. Se esperaba silencio y no es un fallo.
+- STT real: Whisper `base`, CPU/int8; TTS real: `es_ES-davefx-medium`,
+  exclusivamente CPUExecutionProvider. Texto sintetizado: «Hola Pablo, soy Eon,
+  y mi voz ya funciona en local.»
+- Texto REAL transcrito: «Hola Pablo, soy Ian y mi voz ya funciona en local.»
+  Es el resultado sin corregir el nombre ni sustituirlo por el texto original.
+  El round-trip pasó: texto no vacío y ningún error de transcripción.
+- Wake-word real `hey_jarvis`: disponible, sus tres sesiones ONNX informaron
+  únicamente CPUExecutionProvider; `listen_once(2.0)` devolvió `False` en
+  silencio, sin error ni crash. Continúa siendo PROVISIONAL hasta «Hey Eon».
+- WAV actual `.runtime/fase3_tts_sample.wav`: 125996 bytes, mono PCM int16
+  a 22050 Hz, duración 2,856054422 s, generado realmente y no reproducido
+  automáticamente. Su tamaño/duración corresponden a esta nueva síntesis.
+- NVIDIA GPU 0, RTX 4060 Laptop: antes 0/8188 MiB, después 0/8188 MiB.
+  Ollama quedó sin modelos residentes; la voz no cargó modelos en Ollama.
+
+```text
+pytest tests/ -v -s, EON_RUN_VOICE_INTEGRATION=1:
+190 passed, 1 skipped, 124 warnings in 13.33s
+pytest tests/ -q -rs, sin variables de integración:
+189 passed, 2 skipped in 2.32s
+```
+
+La suite mantiene los 167 casos sin hardware anteriores y añade 22 casos
+para la corrección: lectura PCM real, normalización de muestras, estéreo,
+frecuencias 8000/16000/22050/32000/48000, arrays/buffers y su frecuencia,
+interpolación, rechazo de archivos inválidos/comprimidos/vacíos/truncados y
+garantía de no llamar a PyAV. En la suite con hardware solo se omitió la
+integración Ollama; en la suite sin hardware se omitieron ambas integraciones.
+Las 124 advertencias son DeprecationWarning de sounddevice con NumPy 2.5;
+no se suprimieron y siguen siendo deuda técnica, sin fallos de los tests.
+
+Evidencia local ignorada por Git:
+`.runtime/fase3_voice_integration_corrected.json`,
+`.runtime/fase3_corrected_pytest_output.txt`,
+`.runtime/fase3_corrected_integration.log`,
+`.runtime/fase3_corrected_integration.xml`,
+`.runtime/fase3_corrected_mocked_output.txt` y
+`.runtime/fase3_corrected_mocked.xml`. La evidencia JSON/XML de la ejecución
+fallida anterior se conserva separada, sin sobrescribirla.
+
+Fase 3 SÍ está completa en su alcance CPU-only, con contratos, tests y
+validación real. Persisten las limitaciones documentadas: decoder PyAV
+incompatible fuera de la vía implementada, remuestreo básico, wake-word
+inglés provisional, advertencias sounddevice/NumPy y barge-in sin cancelación
+de eco ni identificación de hablante. No se afirma haber implementado playback,
+GUI ni Voice Fingerprint Lock.
+
+Pablo autorizó el commit de cierre con mensaje
+`feat: Fase 3 - Voice Engine STT/TTS, VAD, wake-word y barge-in sobre CPU`
+y el push únicamente de `feature/fase-3-voice-engine` tras estas verificaciones.
+`main`, `core/model_router.py`, `safety/`, GUI y visión siguen sin modificaciones.
+No se hace merge a main ni se elimina la rama. Fase 4 no se inicia sin una
+nueva confirmación explícita de Pablo tras revisar la integración exitosa.
+
+## Fase 3: muestras de ocho voces para decisión humana — 2026-10-07
+
+A petición de Pablo, se creó `scripts/fase3_voice_sampler.py` como diagnóstico
+de una sola vez, no como módulo de runtime ni decisión de voz. Se ejecutó una
+única vez en `feature/fase-3-voice-engine` con Piper ya instalado, sin nuevas
+dependencias, sin micrófono, STT, playback ni cambios de configuración.
+
+Se generaron dos WAV reales por cada ID: es_ES-carlfm-x_low,
+es_ES-davefx-medium, es_ES-mls_10246-low, es_ES-mls_9972-low,
+es_ES-sharvard-medium, es_MX-ald-medium, es_MX-ald-x_low y es_MX-claude-high.
+Los sufijos son `_presentacion.wav` y `_nombre.wav`, con los dos textos exactos
+solicitados por Pablo, dentro de `.runtime/voice_samples/`. Las ocho voces
+confirmaron CPUExecutionProvider exclusivo; se cargaron secuencialmente con
+`use_cuda=False`. Sharvard tiene dos hablantes: se usó el predeterminado,
+speaker 0 (`M`), sin generar una muestra del speaker 1.
+
+Se reutilizaron los pesos y JSON de davefx desde la caché local verificada;
+se descargaron las otras siete voces del catálogo oficial de Piper. Todas
+las descargas usan timeout, try/except con logging, comprobación de tamaño
+y MD5 del catálogo, y publicación atómica para no dejar descargas parciales
+como caché válida. Se registró tamaño y duración de cada WAV. Se verificaron
+los 16 WAV PCM mono int16 completos, 3825344 bytes en conjunto.
+
+El informe local ignorado por Git es
+`.runtime/voice_samples/sampler_report.json`; el log y tabla completos están
+en `.runtime/fase3_voice_sampler.log`. NVIDIA mostró 0/8188 MiB antes y
+después de la generación. Las muestras no se reprodujeron automáticamente.
+
+No se añadieron tests en tests/: es una herramienta diagnóstica de apoyo a
+la elección humana, con la excepción explícita solicitada por Pablo.
+user_settings.json, DECISIONS.md, voice_engine.py y config.py permanecen
+sin cambios. No se hizo commit ni push: HEAD sigue en `35f6965`; solo quedan
+el script nuevo y este registro de sesión sin publicar. main no se modificó.
+La elección de voz permanece pendiente de la escucha y decisión de Pablo;
+no se continúa a ningún otro paso.
+
+## Fase 3: afinación exploratoria de Sharvard — 2026-10-07
+
+Pablo solicitó el diagnóstico previo de las rutas de síntesis y un barrido
+local de parámetros, sin modificar producción ni decidir todavía la voz.
+Se leyeron completos STATUS.md y CONTRACTS.md. VoiceEngine y el sampler
+pasan el texto completo en una llamada a Piper; no fragmentan ni concatenan
+WAV externos. Piper 1.8.0 sí fonemiza por frase y sintetiza bloques internos
+que synthesize_wav escribe consecutivamente en un único WAV, sin añadir
+silencio configurable. Normaliza amplitud por bloque. Esto describe el
+procesamiento, no demuestra por sí solo la causa de una impresión auditiva.
+
+Se inspeccionaron las firmas y código instalados: SynthesisConfig tiene
+speaker_id, length_scale, noise_scale y noise_w_scale con default None
+(heredan de la voz), normalize_audio=True y volume=1.0. En Sharvard los
+defaults efectivos son speaker 0 (`M`), length_scale=1.0, noise_scale=0.667
+y noise_w_scale=0.8. noise_w es la clave del JSON; noise_w_scale es el campo
+Python. sentence_silence no existe en estas APIs ni en SynthesisConfig.
+
+Se creó y ejecutó una sola vez scripts/fase3_voice_tuning.py, reutilizando
+el escritor WAV atómico del sampler y únicamente Sharvard de la caché local.
+No hubo descargas, instalaciones, reproducción, acceso al micrófono, llamadas
+a Ollama ni consultas/cargas GPU. Piper confirmó CPUExecutionProvider exclusivo
+con use_cuda=False. Se generaron y verificaron diez WAV PCM mono int16:
+
+- A: presentación completa con length_scale 1.0, 1.15 y 1.3, manteniendo
+  noise_scale=0.667 y noise_w_scale=0.8. Duraciones reales: 6,501587 s,
+  7,256236 s y 7,999274 s, respectivamente.
+- B: presentación completa con length_scale=1.15, candidato intermedio
+  exploratorio sin selección por escucha; ruido bajo 0.6003/0.72 y alto
+  0.7337/0.88 (noise_scale/noise_w_scale), alrededor de los defaults ±10 %.
+  Duraciones: 7,221406 s y 7,128526 s. Son muestras estocásticas; no se
+  acredita mejora auditiva ni se fija un ganador automáticamente.
+- C: entradas exactas «Eón.», «Eo-on.», «E, on.», «Eeeón.» e «Ión.»,
+  todas con length_scale=1.0 y ambos ruidos por defecto. Solo son pruebas
+  de entrada al sintetizador, no cambios del nombre de EON ni de textos GUI.
+
+Los diez archivos están en .runtime/voice_samples/, junto al informe local
+tuning_report.json con parámetros efectivos, textos, tamaños y duraciones.
+El log y la tabla completos están en .runtime/fase3_voice_tuning.log.
+Todas las muestras usan speaker 0 (`M`), normalize_audio=True y volume=1.0.
+La comparación estocástica no garantiza aislar perfectamente cada cambio;
+la evaluación de naturalidad/pronunciación queda para la escucha de Pablo.
+
+voice_engine.py, config.py, user_settings.json, DECISIONS.md y main siguen
+sin cambios. Se conserva el sampler anterior sin modificar. No se hace
+commit ni push: este diagnóstico y el sampler permanecen sin publicar;
+HEAD sigue en 35f6965. Solo se añade este registro obligatorio de sesión.
+No se continúa a ningún otro paso ni se adopta una decisión de producción.
+
+## Fase 3: cierre con selección humana de voz — 2026-10-07
+
+Tras escuchar manualmente las ocho voces españolas y las variantes de afinación,
+Pablo seleccionó es_ES-sharvard-medium, speaker 0 (`M`). Fase 3 pasa de validada
+técnicamente a cerrada con selección humana de voz, según la sección 14 de
+docs/DECISIONS.md. Se descarta davefx por pronunciación ambigua de «Eon» y
+preferencia auditiva de Pablo. La naturalidad sigue siendo aceptable, no definitiva:
+cierta artificialidad/trompiconeo y el pulido avanzado de prosodia son deuda de UX
+futura, fuera de esta fase.
+
+user_settings.json fija length_scale=1.15, noise_scale=0.7337,
+noise_w_scale=0.88 y speaker_id=0. Los alias «Eon»/«EON» → «Eeeón» afectan
+solo a la entrada interna de Piper, por palabra completa, sensibles a mayúsculas
+y sin sustituciones recursivas. El nombre visible sigue siendo EON/Eon y no
+cambian los textos originales, logs de EON ni contenidos de otros módulos.
+STT base CPU/int8, VAD 2, 16000 Hz y wake-word hey_jarvis permanecen intactos.
+Se extienden la validación estricta, copia profunda, contrato y tests de estos
+ajustes. Los ruidos admiten [0, 2] y length_scale [0.5, 2], con números finitos
+sin booleanos; el cero de ruido desactiva su componente de variabilidad.
+
+Se conservan scripts/fase3_voice_sampler.py y scripts/fase3_voice_tuning.py como
+herramientas diagnósticas de apoyo a la decisión humana, con type hints, logging,
+CPU-only y sin código incompleto. Reproducen la comparación exploratoria original;
+no sustituyen la configuración de producción ni se vuelven a ejecutar en este
+cierre. Los WAV, pesos e informes quedan en .runtime/, ignorados por Git.
+
+Verificación de este cierre:
+
+- Suite completa sin hardware: 245 tests aprobados y 2 omitidos (integraciones
+  reales de voz y Ollama), sin fallos. Informe .runtime/fase3_sharvard_mocked.xml.
+- Integración real autorizada con Sharvard: 1 test aprobado, 124
+  DeprecationWarning de sounddevice/NumPy 2.5; no se ocultan ni se cambian paquetes.
+  Captura real de 3 s a 16000 Hz, WAV Piper mono PCM int16 de 22050 Hz,
+  159788 bytes y 3.622312925170068 s, usando los ajustes seleccionados.
+- Texto real de Whisper: «Hola Pablo, soy Eon y mi voz ya funciona en local.».
+  Se conserva literalmente, sin exigir ni forzar la transcripción del nombre.
+- Wake-word hey_jarvis escuchó 2 s y devolvió False sin error. Whisper informó
+  cpu; Piper y los tres modelos wake-word, CPUExecutionProvider exclusivo.
+  NVIDIA mostró 0/8188 MiB antes y después; ollama ps quedó vacío.
+- Evidencia local: .runtime/fase3_voice_integration_sharvard.json,
+  .runtime/fase3_sharvard_integration.xml y .runtime/fase3_sharvard_integration.log.
+
+Pablo autoriza un commit nuevo y push solo de feature/fase-3-voice-engine.
+No se modifica main ni se hace merge. Fase 4 no se inicia.
