@@ -539,3 +539,18 @@ Verificación de este cierre:
 
 Pablo autoriza un commit nuevo y push solo de feature/fase-3-voice-engine.
 No se modifica main ni se hace merge. Fase 4 no se inicia.
+
+## Fase 3 fusionada a main — 2026-10-07
+
+Tras la autorización explícita de Pablo y la corrección gramatical de la sección
+13 de DECISIONS.md (commit `4fd154978498f80319eb47d508f76efddceca94e`),
+la reverificación sin hardware terminó con 245 tests aprobados y 2 omitidos;
+Ollama estaba vacío. No se repitieron las integraciones reales de voz ni Ollama.
+
+Fase 3 se fusionó a main mediante --no-ff con el commit de merge
+`1815bcedf5fd10f7ba2014fa51e5cf1d8bad631d` y el tag anotado
+`fase-3-completa`, ambos publicados y verificados en el remoto. El contenido
+del merge coincidió exactamente con el de la rama de fase. Se eliminó
+feature/fase-3-voice-engine local y remotamente tras verificar la publicación.
+Las entradas anteriores se conservan como registro histórico de cada sesión.
+Fase 4 no se inicia; queda pendiente de nueva confirmación explícita de Pablo.
