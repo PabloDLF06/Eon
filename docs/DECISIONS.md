@@ -333,7 +333,7 @@ riesgo es un criterio preventivo, no un fallo observado: en la sesión anterior
 se encontró una wheel Windows/Python 3.14 publicada para 18.1.0, pero no se
 instaló ni se validó en este entorno. No se afirma que dicha wheel no exista.
 PyAV instalado sigue en 19.0.1 y faster-whisper en 1.2.1; no se cambian pins,
-se instalan paquetes ni se parchea código de terceros en `.venv`.
+no se instalan paquetes ni se parchea código de terceros en `.venv`.
 
 VoiceEngine lee los WAV con el módulo estándar `wave`, admite PCM sin
 comprimir de 8/16/24/32 bits y normaliza a float32 entre -1 y 1 (int16 dividido
