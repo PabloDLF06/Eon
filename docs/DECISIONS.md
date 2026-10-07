@@ -161,3 +161,42 @@ ampliación mediante un cambio silencioso.
 En esta auditoría, `pip freeze` de `.venv` confirmó `requests==2.34.2` y
 `pytest==9.1.1`, exactamente las versiones pineadas en `requirements.txt` de
 Fase 0. No hubo desviación y no se modificó `requirements.txt`.
+
+## 11. Fase 2: qwen3:8b fijado como brain definitivo — 2026-10-07
+
+Tras revisar el benchmark objetivo de Fase 2 en
+[`fase2_brain_report.md`](fase2_brain_report.md), Pablo confirmó explícitamente
+que `qwen3:8b` queda fijado como modelo definitivo del rol `brain`/dispatcher
+de EON. Esta decisión posterior actualiza, únicamente para `brain`, la
+provisionalidad registrada en la sección 5, que se conserva sin reescribir.
+Las elecciones de los demás roles siguen pendientes de sus validaciones.
+
+La decisión se basa en el 96,67 % de precisión total (29/30) y el 100 % en
+`needs_clarification` (5/5) de `qwen3:8b`, sin fallos de formato. Se descarta
+`llama3.1:latest` para este rol por su menor precisión total, 83,33 % (25/30),
+y especialmente por su 60 % en `needs_clarification` (3/5). Se descarta
+`gemma2:9b` por su 26,67 % de precisión total (8/30), su 0 % en
+`needs_clarification` (0/5) y su incumplimiento de formato poco fiable:
+19/30 respuestas (63,33 %) no respetaron la salida JSON sin Markdown.
+Estos resultados corresponden a los 30 casos y condiciones del benchmark;
+no garantizan autonomía ni generalización fuera de esa muestra.
+
+La latencia media observada en estado estacionario de `qwen3:8b` fue
+6,608 segundos por clasificación (aproximadamente 6,6 s), calculada sobre
+las 29 llamadas posteriores a la primera, que incluía la carga. Es un
+trade-off consciente y aceptado explícitamente por Pablo a cambio de la
+precisión y la detección de peticiones que requieren aclaración humana.
+El diseño previsto del notch ya contempla visualmente esta espera mediante
+el estado `THINKING` (procesamiento, violeta). Es una previsión de interfaz,
+no una GUI ni un estado de runtime ya implementados; su validación visual
+corresponde a la fase de GUI.
+
+El benchmark usó el modo de razonamiento predeterminado de `qwen3:8b`:
+no se desactivó `think`. Ajustarlo queda abierto como opción futura en una
+fase posterior si la latencia resulta un problema real de UX, siempre con
+una nueva evaluación explícita. No se investiga ni se cambia ese modo ahora.
+
+Se verificó que `model_assignments.brain` en `user_settings.json` ya contenía
+`{"provider": "ollama", "model": "qwen3:8b"}`, coincidiendo con el default de
+Fase 0. No se modificó el archivo; cambia el carácter de la elección, de
+provisional a definitivo, mediante esta confirmación humana documentada.

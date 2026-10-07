@@ -231,3 +231,22 @@ La evidencia completa y el log quedan locales e ignorados por Git en
 No se descargaron modelos ni se instalaron dependencias. No se hace merge
 ni push a `main`. La decisión sobre `brain` sigue pendiente de Pablo y de su
 registro explícito posterior en `docs/DECISIONS.md`; no se inicia Fase 3.
+
+## Fase 2 completa: decisión de brain confirmada por Pablo — 2026-10-07
+
+Tras revisar [`fase2_brain_report.md`](fase2_brain_report.md), Pablo confirmó
+explícitamente `qwen3:8b` como modelo definitivo de `brain`/dispatcher. La
+decisión, sus métricas, el trade-off de latencia aceptado y la posibilidad
+de revisar el modo de razonamiento en una fase futura quedan registrados
+en la sección 11 de [`DECISIONS.md`](DECISIONS.md), titulada
+«Fase 2: qwen3:8b fijado como brain definitivo — 2026-10-07».
+
+`model_assignments.brain` ya tenía `provider: ollama` y `model: qwen3:8b`;
+se comprobó y no se modificó `user_settings.json`. No se alteraron el router,
+la configuración de producción, el dataset ni el informe, ni se repitieron
+inferencias. Fase 2 queda completa tras el benchmark y esta decisión humana.
+
+Pablo autorizó explícitamente el cierre mediante merge `--no-ff` a `main`,
+el tag anotado `fase-2-completa` y la eliminación de la rama de fase después
+de publicar y verificar ambos. Fase 3 no se inicia: sigue pendiente de una
+nueva confirmación explícita de Pablo.
