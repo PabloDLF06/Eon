@@ -144,3 +144,20 @@ Decisiones técnicas de esta sesión, dentro del alcance del router local:
 Las asignaciones de modelos de `user_settings.json`, incluido `qwen3:8b` como brain,
 siguen pendientes de la validación A/B de Fase 2. No se fija ninguna decisión
 definitiva de modelo con la prueba de residencia de esta fase.
+
+## 10. Cierre de auditoría de Fase 1: Ollama exclusivamente local — 2026-10-07
+
+Durante la implementación de Fase 1 se decidió que `OllamaProvider` restringiera
+`base_url` por diseño a HTTP con host `localhost`, `127.0.0.1` o `::1`, rechazando
+cualquier host remoto. Es una decisión de seguridad alineada con la filosofía
+local-first de EON, no una limitación accidental ni un cambio funcional de esta
+auditoría.
+
+Si en el futuro se necesita apuntar a un Ollama remoto, por ejemplo en otra
+máquina de la red local, ampliar los hosts admitidos requerirá una decisión
+explícita y documentada en `docs/DECISIONS.md`. No se permitirá introducir esa
+ampliación mediante un cambio silencioso.
+
+En esta auditoría, `pip freeze` de `.venv` confirmó `requests==2.34.2` y
+`pytest==9.1.1`, exactamente las versiones pineadas en `requirements.txt` de
+Fase 0. No hubo desviación y no se modificó `requirements.txt`.

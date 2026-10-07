@@ -161,3 +161,19 @@ Pendiente para Fase 2: validación A/B del modelo brain/dispatcher, incluyendo
 `qwen3:8b` como candidato provisional y mediciones reales para fijar la decisión.
 Fase 2 no se inicia sin confirmación humana explícita de Pablo. El merge de esta
 rama tampoco se realiza hasta su validación manual.
+
+## Deuda técnica conocida
+
+### 2026-10-07 — Detección textual de modelos que requieren /api/embed
+
+La detección de modelos que requieren `/api/embed` en vez de `/api/generate`
+depende de que Ollama devuelva HTTP 400 y de la coincidencia textual del mensaje
+de error `"does not support generate"`. Esta dependencia del texto del servidor
+es deuda técnica conocida de Fase 1.
+
+Si una futura versión de Ollama cambia ese texto, no se activará la alternativa
+de carga por `/api/embed` y la carga de modelos de embeddings fallará de forma
+controlada: se registrará el fallo en logging, no se cargará el modelo y el
+proceso principal continuará. Debe revisarse esta detección si se actualiza la
+versión de Ollama. Esta auditoría documenta la deuda sin modificar la lógica
+funcional ya implementada y probada.
