@@ -90,3 +90,74 @@ está efectivamente trackeado pese al patrón de exclusión de `.runtime/*`.
   árbol de trabajo está limpio. Las entradas anteriores se conservan como
   registro histórico de sesiones previas; este apartado refleja el estado actual.
 - No se ha iniciado la Fase 1. Sigue pendiente de confirmación humana explícita.
+
+## Fase 1 completada — 2026-10-07
+
+Pablo autorizó explícitamente esta fase después de revisar el cierre de Fase 0.
+Las entradas anteriores describen sesiones previas; este apartado recoge la
+implementación actual. El trabajo queda en `feature/fase-1-model-router`, creada
+desde `main`, con commit y push de esa rama; no se hace merge a `main` ni se borra
+la rama de trabajo.
+
+Archivos nuevos:
+
+- `config.py`: carga única del JSON, validación explícita de los cinco roles
+  obligatorios y accesores de configuración. Errores claros en español ante
+  archivo ausente, corrupto o valores inválidos, sin defaults inventados.
+- `core/model_router.py`: interfaz abstracta `ModelProvider`, proveedor Ollama
+  real por HTTP y `ModelRouter` con VRAM Monogamy, serialización, consulta real de
+  residentes, carga/descarga verificadas, generación textual, logging y telemetría
+  diagnóstica mediante `nvidia-smi`.
+- `tests/test_model_router.py`: 62 casos unitarios de configuración, HTTP mockeado,
+  concurrencia, residencia y hardware simulado, más un test separado de integración
+  real con activación explícita.
+
+Se reemplazó `docs/CONTRACTS.md` con las interfaces implementadas y congeladas y
+se añadieron las decisiones de Fase 1 a `docs/DECISIONS.md`. La interfaz común
+no podrá modificarse para Fase 9 sin una decisión documentada previa.
+
+Verificación real antes del commit:
+
+```text
+Python 3.14.8 · pytest 9.1.1 · requests 2.34.2 · Ollama 0.40.0
+pytest tests/test_model_router.py -v -s
+EON_RUN_OLLAMA_INTEGRATION=1
+63 passed in 7.92s
+```
+
+La integración se ejecutó una vez: cargó `nomic-embed-text`, confirmó que
+`nomic-embed-text:latest` era el único residente en `/api/ps`, lo descargó con
+`keep_alive: 0` y confirmó que el inventario quedaba vacío. La carga usó la
+alternativa vacía `/api/embed` porque ese modelo no admite `/api/generate`.
+La generación textual y los cambios entre modelos se validaron con HTTP
+mockeado; no se afirma una prueba real de generación para todos los modelos.
+
+Snapshots reales de `nvidia-smi`, GPU 0, capacidad total 8188 MiB:
+
+| Momento | VRAM total usada |
+| --- | --- |
+| Antes de cargar | 8 MiB |
+| Con `nomic-embed-text:latest` residente | 421 MiB |
+| Después de descargar | 8 MiB |
+
+Durante la residencia, `/api/ps` informó `size_vram=323150151` bytes para el modelo.
+Las lecturas de NVIDIA son del consumo total de la GPU, no picos ni medidas de
+disco; el valor de `/api/ps` corresponde al dato de residencia comunicado por
+Ollama. Son datos puramente informativos, sin decisiones automáticas ni exención
+para embeddings. Tras las pruebas, `ollama ps` mostró solo la cabecera, sin
+modelos huérfanos, y una lectura posterior de NVIDIA volvió a mostrar 8/8188 MiB.
+
+Los informes completos se conservan localmente en `.runtime/fase-1-pytest-output.txt`
+y `.runtime/fase-1-pytest.xml`; están ignorados por Git. Para la prueba se creó
+`.venv` e instalaron únicamente requests, pytest y sus dependencias transitivas.
+No se instala el resto de `requirements.txt` ni se descargan modelos.
+
+Esta fase NO cubre proveedores de nube, Secrets Vault ni ningún otro componente
+de seguridad, GUI, voz, visión, Genesis Engine, memoria o las mejoras posteriores.
+Los getters de ajustes no implementan esos subsistemas. No se han modificado
+`user_settings.json`, las asignaciones de modelos ni las carpetas de esos módulos.
+
+Pendiente para Fase 2: validación A/B del modelo brain/dispatcher, incluyendo
+`qwen3:8b` como candidato provisional y mediciones reales para fijar la decisión.
+Fase 2 no se inicia sin confirmación humana explícita de Pablo. El merge de esta
+rama tampoco se realiza hasta su validación manual.

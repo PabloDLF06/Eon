@@ -81,3 +81,66 @@ Esta corrección posterior busca minimizar la exposición de datos personales
 en el historial público del repositorio. Se registra en un commit documental
 adicional, separado de los dos commits reescritos, para preservar su contenido
 original y dejar constancia explícita de la solicitud y del motivo del cambio.
+
+## 9. Implementación de Fase 1 — 2026-10-07
+
+Decisiones técnicas de esta sesión, dentro del alcance del router local:
+
+- Se crea `.venv` con el Python local 3.14.8, instalando solo `requests==2.34.2`
+  y `pytest==9.1.1` y sus dependencias transitivas. El entorno y los informes de
+  pruebas en `.runtime/` son locales e ignorados por Git; no se instala el resto
+  del stack previsto ni se modifica el inventario de dependencias propuesto.
+- La configuración se lee en la importación de `config.py`, desde la ruta del
+  módulo, como JSON UTF-8 (con soporte de BOM). Los accesores devuelven copias
+  para impedir que un consumidor altere accidentalmente la configuración cargada.
+  No se inventan defaults, se validan los cinco roles y los demás valores expuestos.
+  No se implementa recarga dinámica de configuración en esta fase.
+- `keep_alive` vale `5m` por defecto y se configura en `OllamaProvider`, con
+  duraciones positivas. La descarga utiliza 0. El timeout HTTP es una pareja
+  de 3 segundos de conexión y 120 segundos de lectura, ambos configurables.
+  No hay reintentos automáticos de inferencia que puedan duplicar una petición.
+- La comprobación de residencia sondea `/api/ps` hasta 5 segundos, cada 0,1
+  segundos, con ambos tiempos configurables. Un error de consulta es un estado
+  desconocido que bloquea la carga; nunca se interpreta como una lista vacía.
+- Un `RLock` compartido serializa toda la operación del router y el ciclo de
+  vida del proveedor dentro del proceso. Se verifica la residencia antes y
+  después de generar, se normaliza una etiqueta omitida a `:latest`, y se cuentan
+  todos los residentes, también los que Ollama sitúe en CPU.
+- Se bloquea la carga si existe un modelo externo distinto o residencia múltiple.
+  No se descargan modelos de otros clientes automáticamente. Si el único residente
+  coincide con el solicitado, se reutiliza y pasa a gestionarse como modelo activo
+  del router. El bloqueo de EON no controla procesos externos al suyo.
+- Los fallos operativos se registran: carga/descarga devuelven `False` si no se
+  verifican; las consultas y la generación lanzan `ProviderError`, que `route`
+  captura devolviendo `""`. Esta cadena significa solicitud fallida, no respuesta
+  inventada. Configuración inválida y providers no implementados conservan errores
+  explícitos. Tras una carga no confirmada se intenta descargar el modelo solicitado.
+- La API real de Ollama rechaza la generación para `nomic-embed-text`, incluso en
+  una carga con prompt vacío. Solo ante ese HTTP 400 concreto se usa `/api/embed`
+  con `input: []`, que carga el modelo sin producir vectores. La descarga sigue
+  usando `/api/generate` y `keep_alive: 0`. Es soporte del ciclo de vida exigido,
+  no una implementación de embeddings ni de memoria. Referencias oficiales:
+  [API de generación](https://docs.ollama.com/api/generate),
+  [API de embeddings](https://docs.ollama.com/api/embed).
+- La generación devuelve texto completo sin streaming. Admite `options`, `system`,
+  `format`, `raw`, `think` y `suffix`; las claves de identidad, prompt, streaming
+  y keep-alive se protegen contra sobreescritura. No se incorporan imágenes.
+  El HTTP se restringe a loopback, sin redirecciones ni proxies/credenciales del
+  entorno, para mantener explícito el alcance local de esta fase.
+- Los eventos usan el logger `core.model_router` y el mensaje
+  `timestamp=<UTC ISO 8601> evento=<evento> rol=<rol> modelo=<modelo> resultado=<resultado> vram=<snapshot>`.
+  Los mensajes de diagnóstico están en español, sin prompts, y no se configuran
+  handlers globales al importar el módulo. La aplicación futura elegirá los destinos.
+- `nvidia-smi` se ejecuta sin shell, con timeout de 5 segundos. Su CSV se convierte
+  a una lista por GPU con índice de salida, uso y capacidad en MiB. Si falla, se
+  registra una advertencia y se devuelve una lista vacía solo para la telemetría;
+  no se interrumpe el router. Estas lecturas no eligen modelos ni autorizan
+  excepciones de VRAM Monogamy.
+- La integración real exige `EON_RUN_OLLAMA_INTEGRATION=1`, se omite por defecto
+  en CI y requiere un inventario de residentes vacío al comenzar. Descarga el
+  modelo en `finally`, incluso ante un fallo de verificación. Se ejecutó una vez
+  en esta sesión, dentro de la suite completa.
+
+Las asignaciones de modelos de `user_settings.json`, incluido `qwen3:8b` como brain,
+siguen pendientes de la validación A/B de Fase 2. No se fija ninguna decisión
+definitiva de modelo con la prueba de residencia de esta fase.
