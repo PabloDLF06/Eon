@@ -177,3 +177,17 @@ controlada: se registrará el fallo en logging, no se cargará el modelo y el
 proceso principal continuará. Debe revisarse esta detección si se actualiza la
 versión de Ollama. Esta auditoría documenta la deuda sin modificar la lógica
 funcional ya implementada y probada.
+
+## Fase 1 fusionada a main — 2026-10-07
+
+Tras la confirmación explícita de Pablo y la verificación de cierre de auditoría,
+Fase 1 se fusionó a `main` mediante `--no-ff`, con el commit de merge
+`781a829a9063f306dc43f875ec6dddb6e0934cc6` y el tag anotado
+`fase-1-completa`, ambos publicados en el remoto. Se confirmó que el contenido
+del merge coincidía exactamente con el de la rama de fase, y se eliminó
+`feature/fase-1-model-router` local y remotamente.
+
+La verificación previa al merge terminó con 62 tests aprobados y el test de
+integración real omitido; `requests==2.34.2` y `pytest==9.1.1` en `.venv`
+coincidieron con `requirements.txt`. Fase 2 permanece pendiente de una nueva
+confirmación explícita de Pablo.
