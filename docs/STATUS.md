@@ -191,3 +191,43 @@ La verificación previa al merge terminó con 62 tests aprobados y el test de
 integración real omitido; `requests==2.34.2` y `pytest==9.1.1` en `.venv`
 coincidieron con `requirements.txt`. Fase 2 permanece pendiente de una nueva
 confirmación explícita de Pablo.
+
+## Fase 2 — Benchmark de brain/dispatcher — 2026-10-07
+
+Por autorización explícita de Pablo, se creó `feature/fase-2-brain-benchmark`
+desde `main`, después de confirmar el merge y el tag `fase-1-completa`, el árbol
+limpio, los tres candidatos instalados y Ollama local sin modelos residentes.
+El alcance es medir y reportar; no fijar automáticamente ningún modelo.
+
+Se añadieron `docs/fase2_brain_dataset.json` (30 casos en español, cinco por
+ruta, mostrado en el chat antes de usarlo), `scripts/fase2_brain_benchmark.py`
+y el informe generado `docs/fase2_brain_report.md`. Se reutilizaron
+`ModelRouter` y `OllamaProvider` reales sin modificar `core/model_router.py`
+ni `config.py`. La asignación de `brain` se sustituyó temporalmente en memoria
+solo durante el diagnóstico, restaurándola al salir; `user_settings.json`
+y `docs/DECISIONS.md` permanecen sin cambios.
+
+La ejecución realizó exactamente 90 llamadas reales, sin reintentos, en
+328,750 segundos (5,48 minutos): Qwen obtuvo 29/30 aciertos y 5/5 aclaraciones;
+Llama, 25/30 y 3/5; Gemma, 8/30 y 0/5. Hubo 0, 1 y 19 fallos de formato,
+respectivamente, y ningún timeout ni fallo técnico de carga o generación.
+Los bloques Markdown cuentan como formato inválido; no se repararon las
+respuestas para calcular los resultados. Cada modelo se descargó y se confirmó
+`ollama ps` vacío y `/api/ps` vacío antes de cargar el siguiente; al final
+Ollama quedó sin modelos residentes. Las lecturas de VRAM son snapshots reales
+del consumo total de GPU, no picos ni memoria exclusiva del modelo.
+
+Se verificaron offline la validación del dataset, la restauración del getter,
+el parseo estricto, el bloqueo ante residentes ajenos y el generador del informe.
+Los resultados se recalcularon desde las 90 respuestas originales, con seis
+comprobaciones de aislamiento y cinco muestras completas de reasoning por
+modelo. Tras la ejecución solo se corrigieron los delimitadores Markdown del
+informe, regenerándolo sin inferencias ni alteración de la evidencia. El
+informe distingue el hash del script ejecutado del generador posterior.
+La suite de Fase 1 terminó con 62 tests aprobados y la integración real omitida.
+
+La evidencia completa y el log quedan locales e ignorados por Git en
+`.runtime/fase2_brain_results.json` y `.runtime/fase2_brain_benchmark.log`.
+No se descargaron modelos ni se instalaron dependencias. No se hace merge
+ni push a `main`. La decisión sobre `brain` sigue pendiente de Pablo y de su
+registro explícito posterior en `docs/DECISIONS.md`; no se inicia Fase 3.
