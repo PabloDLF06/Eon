@@ -1,0 +1,18 @@
+{
+  "notch_auto_hide_enabled": true,
+  "notch_auto_hide_seconds": 15,
+  "voice_profile": "pending_selection",
+  "language": "es-ES",
+  "model_assignments": {
+    "brain": {"provider": "ollama", "model": "qwen3:8b"},
+    "vision": {"provider": "ollama", "model": "llava:7b"},
+    "coding": {"provider": "ollama", "model": "qwen2.5-coder:7b"},
+    "embeddings": {"provider": "ollama", "model": "nomic-embed-text"},
+    "reasoning_auditor": {"provider": "ollama", "model": "deepseek-r1:7b"}
+  },
+  "cost_limits": {
+    "daily_usd_cap": 2.0,
+    "monthly_usd_cap": 20.0,
+    "on_limit_reached": "fallback_to_local"
+  }
+}

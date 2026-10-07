@@ -1,0 +1,44 @@
+# Python environments and generated files
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Logs, secrets and local databases
+*.log
+.env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Windows and editor artifacts
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.vs/
+.idea/
+.vscode/
+*.swp
+*.tmp
+
+# Runtime contents are local; preserve the directory in Git
+.runtime/*
+!.runtime/.gitkeep

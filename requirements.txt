@@ -1,0 +1,19 @@
+# Proposed direct dependencies for future phases; not installed in Phase 0.
+# Published, non-yanked PyPI releases checked on 2026-10-07.
+PyQt6==6.11.0
+sounddevice==0.5.6
+faster-whisper==1.2.1
+openwakeword==0.6.0
+mss==10.2.0
+pyautogui==0.9.54
+pynput==1.8.2
+pytest==9.1.1
+keyring==25.7.0
+psutil==7.2.2
+pynvml==13.0.1
+sqlite-vec==0.1.9
+requests==2.34.2
+webrtcvad==2.0.10
+
+# Review and adjust these versions during the real installation phase; do not install now.
+# Voice Fingerprint Lock and Piper TTS libraries remain undecided until their respective phases.
