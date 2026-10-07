@@ -17,11 +17,21 @@ import wave
 from faster_whisper import WhisperModel
 import numpy as np
 from piper import PiperVoice
+from piper.config import SynthesisConfig
 
 import config
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _apply_pronunciation_aliases(text: str, aliases: dict[str, str]) -> str:
+    """Map whole Unicode words/phrases once, case-sensitively, for Piper input only."""
+    if not aliases:
+        return text
+    alternatives = "|".join(re.escape(source) for source in sorted(aliases, key=len, reverse=True))
+    return re.sub(r"(?<!\w)(?:" + alternatives + r")(?!\w)",
+                  lambda match: aliases[match.group(0)], text)
 
 
 def _normalize_audio(samples: Any) -> np.ndarray:
@@ -201,6 +211,8 @@ class VoiceEngine:
                     candidate = PiperVoice.load(path, use_cuda=False)
                     if candidate.session.get_providers() != ["CPUExecutionProvider"]:
                         raise RuntimeError("Piper debe usar exclusivamente CPUExecutionProvider.")
+                    if self._settings["tts_speaker_id"] >= candidate.config.num_speakers:
+                        raise ValueError("El speaker elegido no existe en la voz Piper cargada.")
                     self._tts = candidate
                 self._event("carga_tts", True, started)
                 return True
@@ -231,7 +243,11 @@ class VoiceEngine:
             return self._tts is not None
 
     def synthesize(self, text: str, output_path: str | None = None) -> str:
-        """Write and validate a real mono int16 WAV, atomically replacing the destination."""
+        """Write an atomic PCM WAV with chosen Piper settings and internal-only aliases.
+
+        The caller's original text, product name and event logs remain unchanged.
+        Only a local copy passed to Piper gets case-sensitive whole-word aliases.
+        """
         started = time.perf_counter()
         temporary_path: Path | None = None
         with self._lock:
@@ -249,7 +265,14 @@ class VoiceEngine:
                 with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".wav", delete=False) as temporary:
                     temporary_path = Path(temporary.name)
                 with wave.open(str(temporary_path), "wb") as wav_file:
-                    self._tts.synthesize_wav(text, wav_file)
+                    synthesis = SynthesisConfig(
+                        speaker_id=self._settings["tts_speaker_id"],
+                        length_scale=self._settings["tts_length_scale"],
+                        noise_scale=self._settings["tts_noise_scale"],
+                        noise_w_scale=self._settings["tts_noise_w_scale"],
+                    )
+                    synthesis_text = _apply_pronunciation_aliases(text, self._settings["tts_pronunciation_aliases"])
+                    self._tts.synthesize_wav(synthesis_text, wav_file, syn_config=synthesis)
                 with wave.open(str(temporary_path), "rb") as wav_file:
                     if wav_file.getnframes() <= 0 or wav_file.getnchannels() != 1 or wav_file.getsampwidth() != 2 or wav_file.getframerate() <= 0:
                         raise ValueError("Piper no produjo un WAV PCM mono int16 válido.")

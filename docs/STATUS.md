@@ -409,3 +409,133 @@ y el push únicamente de `feature/fase-3-voice-engine` tras estas verificaciones
 `main`, `core/model_router.py`, `safety/`, GUI y visión siguen sin modificaciones.
 No se hace merge a main ni se elimina la rama. Fase 4 no se inicia sin una
 nueva confirmación explícita de Pablo tras revisar la integración exitosa.
+
+## Fase 3: muestras de ocho voces para decisión humana — 2026-10-07
+
+A petición de Pablo, se creó `scripts/fase3_voice_sampler.py` como diagnóstico
+de una sola vez, no como módulo de runtime ni decisión de voz. Se ejecutó una
+única vez en `feature/fase-3-voice-engine` con Piper ya instalado, sin nuevas
+dependencias, sin micrófono, STT, playback ni cambios de configuración.
+
+Se generaron dos WAV reales por cada ID: es_ES-carlfm-x_low,
+es_ES-davefx-medium, es_ES-mls_10246-low, es_ES-mls_9972-low,
+es_ES-sharvard-medium, es_MX-ald-medium, es_MX-ald-x_low y es_MX-claude-high.
+Los sufijos son `_presentacion.wav` y `_nombre.wav`, con los dos textos exactos
+solicitados por Pablo, dentro de `.runtime/voice_samples/`. Las ocho voces
+confirmaron CPUExecutionProvider exclusivo; se cargaron secuencialmente con
+`use_cuda=False`. Sharvard tiene dos hablantes: se usó el predeterminado,
+speaker 0 (`M`), sin generar una muestra del speaker 1.
+
+Se reutilizaron los pesos y JSON de davefx desde la caché local verificada;
+se descargaron las otras siete voces del catálogo oficial de Piper. Todas
+las descargas usan timeout, try/except con logging, comprobación de tamaño
+y MD5 del catálogo, y publicación atómica para no dejar descargas parciales
+como caché válida. Se registró tamaño y duración de cada WAV. Se verificaron
+los 16 WAV PCM mono int16 completos, 3825344 bytes en conjunto.
+
+El informe local ignorado por Git es
+`.runtime/voice_samples/sampler_report.json`; el log y tabla completos están
+en `.runtime/fase3_voice_sampler.log`. NVIDIA mostró 0/8188 MiB antes y
+después de la generación. Las muestras no se reprodujeron automáticamente.
+
+No se añadieron tests en tests/: es una herramienta diagnóstica de apoyo a
+la elección humana, con la excepción explícita solicitada por Pablo.
+user_settings.json, DECISIONS.md, voice_engine.py y config.py permanecen
+sin cambios. No se hizo commit ni push: HEAD sigue en `35f6965`; solo quedan
+el script nuevo y este registro de sesión sin publicar. main no se modificó.
+La elección de voz permanece pendiente de la escucha y decisión de Pablo;
+no se continúa a ningún otro paso.
+
+## Fase 3: afinación exploratoria de Sharvard — 2026-10-07
+
+Pablo solicitó el diagnóstico previo de las rutas de síntesis y un barrido
+local de parámetros, sin modificar producción ni decidir todavía la voz.
+Se leyeron completos STATUS.md y CONTRACTS.md. VoiceEngine y el sampler
+pasan el texto completo en una llamada a Piper; no fragmentan ni concatenan
+WAV externos. Piper 1.8.0 sí fonemiza por frase y sintetiza bloques internos
+que synthesize_wav escribe consecutivamente en un único WAV, sin añadir
+silencio configurable. Normaliza amplitud por bloque. Esto describe el
+procesamiento, no demuestra por sí solo la causa de una impresión auditiva.
+
+Se inspeccionaron las firmas y código instalados: SynthesisConfig tiene
+speaker_id, length_scale, noise_scale y noise_w_scale con default None
+(heredan de la voz), normalize_audio=True y volume=1.0. En Sharvard los
+defaults efectivos son speaker 0 (`M`), length_scale=1.0, noise_scale=0.667
+y noise_w_scale=0.8. noise_w es la clave del JSON; noise_w_scale es el campo
+Python. sentence_silence no existe en estas APIs ni en SynthesisConfig.
+
+Se creó y ejecutó una sola vez scripts/fase3_voice_tuning.py, reutilizando
+el escritor WAV atómico del sampler y únicamente Sharvard de la caché local.
+No hubo descargas, instalaciones, reproducción, acceso al micrófono, llamadas
+a Ollama ni consultas/cargas GPU. Piper confirmó CPUExecutionProvider exclusivo
+con use_cuda=False. Se generaron y verificaron diez WAV PCM mono int16:
+
+- A: presentación completa con length_scale 1.0, 1.15 y 1.3, manteniendo
+  noise_scale=0.667 y noise_w_scale=0.8. Duraciones reales: 6,501587 s,
+  7,256236 s y 7,999274 s, respectivamente.
+- B: presentación completa con length_scale=1.15, candidato intermedio
+  exploratorio sin selección por escucha; ruido bajo 0.6003/0.72 y alto
+  0.7337/0.88 (noise_scale/noise_w_scale), alrededor de los defaults ±10 %.
+  Duraciones: 7,221406 s y 7,128526 s. Son muestras estocásticas; no se
+  acredita mejora auditiva ni se fija un ganador automáticamente.
+- C: entradas exactas «Eón.», «Eo-on.», «E, on.», «Eeeón.» e «Ión.»,
+  todas con length_scale=1.0 y ambos ruidos por defecto. Solo son pruebas
+  de entrada al sintetizador, no cambios del nombre de EON ni de textos GUI.
+
+Los diez archivos están en .runtime/voice_samples/, junto al informe local
+tuning_report.json con parámetros efectivos, textos, tamaños y duraciones.
+El log y la tabla completos están en .runtime/fase3_voice_tuning.log.
+Todas las muestras usan speaker 0 (`M`), normalize_audio=True y volume=1.0.
+La comparación estocástica no garantiza aislar perfectamente cada cambio;
+la evaluación de naturalidad/pronunciación queda para la escucha de Pablo.
+
+voice_engine.py, config.py, user_settings.json, DECISIONS.md y main siguen
+sin cambios. Se conserva el sampler anterior sin modificar. No se hace
+commit ni push: este diagnóstico y el sampler permanecen sin publicar;
+HEAD sigue en 35f6965. Solo se añade este registro obligatorio de sesión.
+No se continúa a ningún otro paso ni se adopta una decisión de producción.
+
+## Fase 3: cierre con selección humana de voz — 2026-10-07
+
+Tras escuchar manualmente las ocho voces españolas y las variantes de afinación,
+Pablo seleccionó es_ES-sharvard-medium, speaker 0 (`M`). Fase 3 pasa de validada
+técnicamente a cerrada con selección humana de voz, según la sección 14 de
+docs/DECISIONS.md. Se descarta davefx por pronunciación ambigua de «Eon» y
+preferencia auditiva de Pablo. La naturalidad sigue siendo aceptable, no definitiva:
+cierta artificialidad/trompiconeo y el pulido avanzado de prosodia son deuda de UX
+futura, fuera de esta fase.
+
+user_settings.json fija length_scale=1.15, noise_scale=0.7337,
+noise_w_scale=0.88 y speaker_id=0. Los alias «Eon»/«EON» → «Eeeón» afectan
+solo a la entrada interna de Piper, por palabra completa, sensibles a mayúsculas
+y sin sustituciones recursivas. El nombre visible sigue siendo EON/Eon y no
+cambian los textos originales, logs de EON ni contenidos de otros módulos.
+STT base CPU/int8, VAD 2, 16000 Hz y wake-word hey_jarvis permanecen intactos.
+Se extienden la validación estricta, copia profunda, contrato y tests de estos
+ajustes. Los ruidos admiten [0, 2] y length_scale [0.5, 2], con números finitos
+sin booleanos; el cero de ruido desactiva su componente de variabilidad.
+
+Se conservan scripts/fase3_voice_sampler.py y scripts/fase3_voice_tuning.py como
+herramientas diagnósticas de apoyo a la decisión humana, con type hints, logging,
+CPU-only y sin código incompleto. Reproducen la comparación exploratoria original;
+no sustituyen la configuración de producción ni se vuelven a ejecutar en este
+cierre. Los WAV, pesos e informes quedan en .runtime/, ignorados por Git.
+
+Verificación de este cierre:
+
+- Suite completa sin hardware: 245 tests aprobados y 2 omitidos (integraciones
+  reales de voz y Ollama), sin fallos. Informe .runtime/fase3_sharvard_mocked.xml.
+- Integración real autorizada con Sharvard: 1 test aprobado, 124
+  DeprecationWarning de sounddevice/NumPy 2.5; no se ocultan ni se cambian paquetes.
+  Captura real de 3 s a 16000 Hz, WAV Piper mono PCM int16 de 22050 Hz,
+  159788 bytes y 3.622312925170068 s, usando los ajustes seleccionados.
+- Texto real de Whisper: «Hola Pablo, soy Eon y mi voz ya funciona en local.».
+  Se conserva literalmente, sin exigir ni forzar la transcripción del nombre.
+- Wake-word hey_jarvis escuchó 2 s y devolvió False sin error. Whisper informó
+  cpu; Piper y los tres modelos wake-word, CPUExecutionProvider exclusivo.
+  NVIDIA mostró 0/8188 MiB antes y después; ollama ps quedó vacío.
+- Evidencia local: .runtime/fase3_voice_integration_sharvard.json,
+  .runtime/fase3_sharvard_integration.xml y .runtime/fase3_sharvard_integration.log.
+
+Pablo autoriza un commit nuevo y push solo de feature/fase-3-voice-engine.
+No se modifica main ni se hace merge. Fase 4 no se inicia.

@@ -369,3 +369,32 @@ aprobados, 1 omitido (Ollama) y 124 DeprecationWarning de sounddevice/NumPy.
 NVIDIA mostró 0/8188 MiB antes y después y Ollama quedó vacío. La deuda del
 decoder PyAV sigue vigente para formatos fuera del alcance WAV PCM; el
 bypass resuelve la entrada implementada, no repara la librería de terceros.
+
+## 14. Fase 3: selección humana de Sharvard y ajuste TTS — 2026-10-07
+
+Pablo escuchó manualmente las muestras de las ocho voces españolas reales de
+Piper, generadas con scripts/fase3_voice_sampler.py, y las variantes de Sharvard
+de scripts/fase3_voice_tuning.py. Se descarta es_ES-davefx-medium como voz final
+por la pronunciación ambigua del nombre «Eon» y la preferencia auditiva de Pablo.
+Se fija es_ES-sharvard-medium, speaker 0 (`M`), como voz seleccionada de Fase 3.
+
+Se adoptan los parámetros elegidos al escuchar las muestras:
+length_scale=1.15, noise_scale=0.7337 y noise_w_scale=0.88, con speaker_id=0.
+Corresponden a la velocidad de sharvard_length_1.15_presentacion.wav y al ajuste
+de naturalidad de sharvard_noise_alto_presentacion.wav. Se mantiene Piper 1.8.0
+con use_cuda=False y CPUExecutionProvider exclusivo; STT, VAD y wake-word no
+cambian. normalize_audio=True y volume=1.0 mantienen los defaults reales.
+
+La variante preferida sharvard_nombre_eeeon.wav motiva el alias interno
+«Eon»/«EON» → «Eeeón», aplicado solo a la entrada del sintetizador. Las
+coincidencias son por palabra completa, sensibles a mayúsculas y no recursivas.
+El nombre visible del proyecto sigue siendo EON/Eon; no se cambian textos de
+interfaz, logs de EON, documentación del nombre ni textos que reciben otros módulos.
+
+Pablo percibe todavía cierta artificialidad/trompiconeo, pero acepta esta voz
+como suficiente para cerrar la fase funcional. No se afirma calidad natural
+definitiva: el ajuste fino avanzado de prosodia/voz queda como deuda futura de
+UX/pulido, fuera de Fase 3. Se conservan ambos scripts como herramientas de apoyo
+a la decisión humana, con logging, type hints y CPU-only; los WAV, modelos e
+informes locales de .runtime/ no se versionan. Esta entrada actualiza la elección
+provisional de la sección 12 sin reescribir su evidencia histórica.

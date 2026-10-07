@@ -158,7 +158,7 @@ get_notch_settings() -> dict[str, bool | int]
 get_cost_limits() -> dict[str, float | str]
 get_language() -> str
 get_voice_profile() -> str
-get_voice_settings() -> dict[str, str | int]
+get_voice_settings() -> dict[str, str | int | float | dict[str, str]]
 ```
 
 Los accesores de diccionarios devuelven copias. Los ajustes de notch, idioma, voz
@@ -176,10 +176,18 @@ Desde Fase 3, `voice_settings` es obligatorio y contiene exactamente estas clave
 | `vad_aggressiveness` | `int` entre 0 y 3, sin aceptar booleanos |
 | `sample_rate` | `int`: exclusivamente 16000 en esta fase, sin aceptar booleanos ni floats |
 | `wake_word_model` | `str`: `alexa`, `hey_mycroft`, `hey_jarvis`, `hey_rhasspy`, `timer`, `weather`, IDs reales de openWakeWord 0.6.0 |
+| `tts_speaker_id` | `int` >= 0, sin booleanos; elegido 0 (`M`) |
+| `tts_length_scale` | `int` o `float` finito entre 0.5 y 2.0 inclusive, sin booleanos; elegido 1.15 |
+| `tts_noise_scale` | `int` o `float` finito entre 0.0 y 2.0 inclusive, sin booleanos; elegido 0.7337 |
+| `tts_noise_w_scale` | `int` o `float` finito entre 0.0 y 2.0 inclusive, sin booleanos; elegido 0.88 |
+| `tts_pronunciation_aliases` | `dict[str, str]`: claves y valores no vacíos, sin espacios externos; elegido `{"Eon": "Eeeón", "EON": "Eeeón"}`; `{}` desactiva los alias |
 
 Claves ausentes, adicionales o valores inválidos producen `ConfigurationError`
 al importar/cargar configuración. `get_voice_settings()` devuelve una copia
-independiente. Toda la validación de Fase 1 se conserva. La frecuencia de la
+profunda independiente, incluidos los alias anidados. El cero en los parámetros
+de ruido es válido (sin variabilidad de ese componente). `voice_profile` es un
+ID real de voz Piper, actualmente `es_ES-sharvard-medium`; no es un nombre libre
+ni un alias visual. Toda la validación de Fase 1 se conserva. La frecuencia de la
 tubería de voz queda limitada explícitamente a 16 kHz para mantener coherentes
 arrays STT, VAD y wake-word; ampliar el rango requiere adaptar los consumidores.
 
@@ -317,8 +325,19 @@ reservar/liberar memoria global de otros consumidores.
   silencio también puede producir `""` sin error. Consultar `last_error`.
 - TTS: Piper con `use_cuda=False` y sesión exclusivamente CPU verificada.
   Carga el ONNX y su JSON desde `.runtime/voice_models/piper`; la voz actual es
-  `es_ES-davefx-medium`. Un ID español de voz mal formado produce `ValueError`
+  `es_ES-sharvard-medium`. Un ID español de voz mal formado produce `ValueError`
   en el constructor; la falta del archivo deja `load_tts() == False` con logging.
+  Un speaker fuera del rango de hablantes del modelo deja `load_tts() == False`
+  con logging y `last_error`. `synthesize` pasa los ajustes validados mediante
+  `SynthesisConfig(speaker_id=0, length_scale=1.15, noise_scale=0.7337,
+  noise_w_scale=0.88)` en la configuración elegida, manteniendo los defaults
+  reales de Piper `normalize_audio=True` y `volume=1.0`.
+  Los alias se aplican una sola vez, con coincidencias literales sensibles a
+  mayúsculas y límites de palabra Unicode; no alteran partes internas de otras
+  palabras ni encadenan sustituciones. Solo transforman una copia local del texto
+  que se envía a Piper: no cambian el nombre visible EON/Eon, el texto original,
+  las rutas de salida, los logs de EON ni el contenido recibido por otros módulos.
+  Se pasa el texto completo en una llamada; Piper lo procesa por frases internas.
   `synthesize` genera WAV real mono PCM int16 y devuelve su ruta absoluta.
   Default: `.runtime/tts_output.wav`. Usa temporal en la misma carpeta, valida
   formato y muestras y publica mediante `os.replace`; un fallo conserva el
@@ -327,6 +346,10 @@ reservar/liberar memoria global de otros consumidores.
 - Las operaciones de carga/descarga/transcripción/síntesis registran timestamp
   UTC, operación, dispositivo CPU, resultado y duración. No registran el contenido
   de transcripciones por defecto. No implementa reproducción ni conexión GUI.
+
+La naturalidad de Piper fue aceptada por Pablo para el cierre funcional de
+Fase 3, no como calidad definitiva. Persiste cierta artificialidad/trompiconeo;
+la mejora avanzada de prosodia/voz queda como deuda de UX/pulido fuera de esta fase.
 
 ## 10. BargeInDetector
 

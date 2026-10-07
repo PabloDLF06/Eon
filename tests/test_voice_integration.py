@@ -32,6 +32,8 @@ def test_real_cpu_voice_round_trip_and_microphone() -> None:
     )}}
     telemetry = ModelRouter()
     evidence["vram_before"] = telemetry.measure_real_vram_snapshot()
+    evidence["voice_profile"] = config.get_voice_profile()
+    evidence["tts_settings"] = {key: value for key, value in config.get_voice_settings().items() if key.startswith("tts_")}
     try:
         assert len(subprocess.run(["ollama", "ps"], check=True, capture_output=True, text=True, timeout=10).stdout.strip().splitlines()) == 1
         acoustic = AcousticDetector()
@@ -46,6 +48,13 @@ def test_real_cpu_voice_round_trip_and_microphone() -> None:
         assert engine.load_stt(), engine.last_error
         evidence["stt_device"] = engine._stt.model.device
         assert engine.load_tts(), engine.last_error
+        assert evidence["voice_profile"] == "es_ES-sharvard-medium"
+        assert evidence["tts_settings"] == {
+            "tts_engine": "piper", "tts_speaker_id": 0, "tts_length_scale": 1.15,
+            "tts_noise_scale": 0.7337, "tts_noise_w_scale": 0.88,
+            "tts_pronunciation_aliases": {"Eon": "Eeeón", "EON": "Eeeón"},
+        }
+        assert Path(engine._tts.session._model_path).name == "es_ES-sharvard-medium.onnx"
         evidence["piper_providers"] = engine._tts.session.get_providers()
         sample_path = ROOT / ".runtime/fase3_tts_sample.wav"
         text = "Hola Pablo, soy Eon, y mi voz ya funciona en local."
@@ -80,7 +89,7 @@ def test_real_cpu_voice_round_trip_and_microphone() -> None:
             and evidence["vram_before"] and evidence["vram_before"] == evidence["vram_after"]
             and len(evidence["ollama_ps_after"].splitlines()) == 1
         ) else "failed"
-        (ROOT / ".runtime/fase3_voice_integration_corrected.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (ROOT / ".runtime/fase3_voice_integration_sharvard.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print("INTEGRACIÓN REAL DE VOZ:\n" + json.dumps(evidence, ensure_ascii=False, indent=2), flush=True)
     assert evidence["vram_before"] and evidence["vram_after"]
     assert evidence["vram_before"] == evidence["vram_after"], "La VRAM basal cambió; revisar procesos externos y providers."

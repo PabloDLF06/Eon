@@ -26,8 +26,9 @@ def stt_model() -> Mock:
 def tts_voice() -> Mock:
     voice = Mock()
     voice.session.get_providers.return_value = ["CPUExecutionProvider"]
+    voice.config.num_speakers = 2
 
-    def write_wav(text: str, output: wave.Wave_write) -> None:
+    def write_wav(text: str, output: wave.Wave_write, syn_config: module.SynthesisConfig | None = None) -> None:
         output.setnchannels(1)
         output.setsampwidth(2)
         output.setframerate(22050)
@@ -216,7 +217,7 @@ def test_tts_loads_once_on_cpu_and_unloads() -> None:
         assert engine.load_tts() and engine.load_tts() and engine.is_tts_loaded()
     factory.assert_called_once()
     assert factory.call_args.kwargs["use_cuda"] is False
-    assert factory.call_args.args[0].name == "es_ES-davefx-medium.onnx"
+    assert factory.call_args.args[0].name == "es_ES-sharvard-medium.onnx"
     assert engine.unload_tts() and engine.unload_tts() and not engine.is_tts_loaded()
 
 
@@ -299,7 +300,8 @@ def test_config_rejects_invalid_voice_field(field: str, value: object, tmp_path:
         config._load_settings(path)
 
 
-@pytest.mark.parametrize("field", ["stt_model", "stt_device", "stt_compute_type", "tts_engine", "vad_aggressiveness", "sample_rate", "wake_word_model"])
+@pytest.mark.parametrize("field", ["stt_model", "stt_device", "stt_compute_type", "tts_engine", "vad_aggressiveness", "sample_rate", "wake_word_model",
+                                  "tts_speaker_id", "tts_length_scale", "tts_noise_scale", "tts_noise_w_scale", "tts_pronunciation_aliases"])
 def test_config_requires_each_voice_field(field: str, tmp_path: Path) -> None:
     settings = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
     del settings["voice_settings"][field]
@@ -323,3 +325,91 @@ def test_voice_settings_accessor_returns_copy() -> None:
     copy = config.get_voice_settings()
     copy["stt_device"] = "cuda"
     assert config.get_voice_settings()["stt_device"] == "cpu"
+    copy["tts_pronunciation_aliases"]["Eon"] = "Different"
+    assert config.get_voice_settings()["tts_pronunciation_aliases"]["Eon"] == "Eeeón"
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Hola, soy Eon", "Hola, soy Eeeón"),
+    ("EON y Eon.", "Eeeón y Eeeón."),
+    ("(Eon), ¡EON! ¿Eon?", "(Eeeón), ¡Eeeón! ¿Eeeón?"),
+    ("preEon Eonario EONX Eon_1 Eon2 áEon Eoná eon", "preEon Eonario EONX Eon_1 Eon2 áEon Eoná eon"),
+])
+def test_synthesize_aliases_only_piper_input_and_keeps_original_text_and_logs(
+    text: str, expected: str, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+    voice = tts_voice()
+    output_path = tmp_path / "Eon.wav"
+    original = text
+    with patch.object(module.PiperVoice, "load", return_value=voice):
+        result = VoiceEngine().synthesize(text, str(output_path))
+    assert result == str(output_path) and output_path.name == "Eon.wav"
+    assert text == original
+    assert voice.synthesize_wav.call_args.args[0] == expected
+    assert "Eeeón" not in caplog.text and "evento=sintesis" in caplog.text
+    synthesis = voice.synthesize_wav.call_args.kwargs["syn_config"]
+    assert isinstance(synthesis, module.SynthesisConfig)
+    assert (synthesis.speaker_id, synthesis.length_scale, synthesis.noise_scale, synthesis.noise_w_scale) == (0, 1.15, 0.7337, 0.88)
+    assert synthesis.normalize_audio is True and synthesis.volume == 1.0
+
+
+def test_aliases_are_literal_nonrecursive_and_can_be_disabled() -> None:
+    assert module._apply_pronunciation_aliases("Eon Eeeón", {"Eon": "Eeeón", "Eeeón": "Other"}) == "Eeeón Other"
+    assert module._apply_pronunciation_aliases("E.on Eon", {"E.on": "Name"}) == "Name Eon"
+    assert module._apply_pronunciation_aliases("Eon", {}) == "Eon"
+
+
+def test_tts_speaker_not_in_loaded_voice_is_controlled() -> None:
+    voice = tts_voice()
+    engine = VoiceEngine()
+    engine._settings["tts_speaker_id"] = 2
+    with patch.object(module.PiperVoice, "load", return_value=voice):
+        assert not engine.load_tts() and not engine.is_tts_loaded()
+    assert engine.last_error
+
+
+@pytest.mark.parametrize("field,value", [
+    ("tts_speaker_id", -1), ("tts_speaker_id", True), ("tts_speaker_id", 0.0), ("tts_speaker_id", "0"),
+    ("tts_length_scale", 0), ("tts_length_scale", 0.49), ("tts_length_scale", 2.01),
+    ("tts_length_scale", float("nan")), ("tts_length_scale", float("inf")), ("tts_length_scale", True), ("tts_length_scale", "1.15"),
+    ("tts_noise_scale", -0.01), ("tts_noise_scale", 2.01), ("tts_noise_scale", float("nan")),
+    ("tts_noise_scale", float("inf")), ("tts_noise_scale", True), ("tts_noise_scale", "0.7337"),
+    ("tts_noise_w_scale", -0.01), ("tts_noise_w_scale", 2.01), ("tts_noise_w_scale", float("nan")),
+    ("tts_noise_w_scale", float("inf")), ("tts_noise_w_scale", True), ("tts_noise_w_scale", "0.88"),
+    ("tts_pronunciation_aliases", []), ("tts_pronunciation_aliases", None),
+    ("tts_pronunciation_aliases", {"": "Name"}), ("tts_pronunciation_aliases", {"Eon": ""}),
+    ("tts_pronunciation_aliases", {" Eon": "Name"}), ("tts_pronunciation_aliases", {"Eon ": "Name"}),
+    ("tts_pronunciation_aliases", {"Eon": " Name"}), ("tts_pronunciation_aliases", {"Eon": "Name "}),
+    ("tts_pronunciation_aliases", {"Eon": 1}), ("tts_pronunciation_aliases", {"Eon": True}),
+])
+def test_config_rejects_invalid_tts_setting(field: str, value: object, tmp_path: Path) -> None:
+    settings = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
+    settings["voice_settings"][field] = value
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    with pytest.raises(config.ConfigurationError, match=field):
+        config._load_settings(path)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("tts_speaker_id", 0), ("tts_speaker_id", 1),
+    ("tts_length_scale", 0.5), ("tts_length_scale", 1), ("tts_length_scale", 2.0),
+    ("tts_noise_scale", 0), ("tts_noise_scale", 2),
+    ("tts_noise_w_scale", 0.0), ("tts_noise_w_scale", 2.0),
+    ("tts_pronunciation_aliases", {}), ("tts_pronunciation_aliases", {"Eon": "Eeeón", "EON": "Eeeón"}),
+])
+def test_config_accepts_valid_tts_settings_and_bounds(field: str, value: object, tmp_path: Path) -> None:
+    settings = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
+    settings["voice_settings"][field] = value
+    path = tmp_path / "settings.json"
+    path.write_text(json.dumps(settings), encoding="utf-8")
+    assert config._load_settings(path)["voice_settings"][field] == value
+
+
+def test_visible_project_name_and_selected_voice_are_not_renamed() -> None:
+    settings = json.loads(config.SETTINGS_PATH.read_text(encoding="utf-8"))
+    assert settings["voice_profile"] == "es_ES-sharvard-medium"
+    assert config.get_voice_profile() == "es_ES-sharvard-medium"
+    assert (module.ROOT / "docs/STATUS.md").read_text(encoding="utf-8").startswith("# EON — Estado real")
+    assert (module.ROOT / "docs/DECISIONS.md").read_text(encoding="utf-8").startswith("# EON — Decisiones")
