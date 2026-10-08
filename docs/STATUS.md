@@ -792,3 +792,89 @@ user_settings.json; esos ajustes personales pueden ensuciar el árbol de trabajo
 Offscreen no valida composición, foco de escritorio ni varios monitores físicos.
 Solo se autoriza un commit nuevo y push de esta rama, que se conserva; Pablo
 debe verlo en pantalla y confirmar antes de cualquier merge o Fase 5.
+
+## Fase 4: pulido visual y corrección del medidor, pendiente de pantalla — 2026-10-08
+
+Pablo validó físicamente 3299020 y autorizó esta ronda sobre la misma rama
+feature/fase-4-notch-gui. Se releen los módulos GUI/config/harness, AGENTS.md,
+STATUS.md y CONTRACTS.md completos y DECISIONS.md §17 antes de escribir código.
+Se conserva el controlador puro sin cambios, tamaños cerrados 280–320×16/27,
+reveal 0 cerrado, anclaje superior, paleta, auto-hide, prioridad de visión,
+entrada y guardado. No hay consultas de repositorios externos en esta ronda,
+instalaciones ni modificaciones de core/voz/safety. Main local y remoto siguen
+en ee8b3830b5f912fd0fdbaa3bb7cc5d5bfce4f162; sin merge ni push directo.
+
+Cambios documentados posteriormente en DECISIONS.md §18 y CONTRACTS.md §17:
+
+- Onda horizontal LINEAL centro→lados en PEEK/hover y RADIAL en EXPANDED.
+  Forma interpola 180 ms sin reiniciar frente/color de estado (620 ms OutCubic).
+  Expandir/colapsar mantienen 330/290 ms aprobados, tamaños nativos reales.
+- EXPANDED 680×300, clamp ancho_pantalla−24/altura; mínimo nominal 560 siempre
+  subordinado al espacio físico. Margen 18, separaciones 8/12, cabecera 76 y
+  personaje 120×76; fila opcional de accesos, mensajes oscuros y entrada 44.
+  QSS propio oscuro con hover, foco y labels, sin assets o iconos externos.
+- Configuración 520×560 limitada al área disponible: switch, selector
+  10/15/20 y personalizado para no sustituir ajustes existentes. Tarjetas con
+  nombre editable, ruta abreviada/tooltip, punto de color y eliminación propia.
+  Los selectores, guardado validado/atómico y aplicación en vivo se conservan.
+- Medición continua opt-in por QThread/get_input_level hasta otro clic o cierre.
+  El código anterior ya sondeaba repetidamente, pero solo 3 s, con sqrt(RMS)
+  y barra de 6 px; no se acredita una causa física única sin repetir hardware.
+  Nuevo módulo puro/test gui/microphone_meter.py: −50→−8 dBFS mapeados a 0–1,
+  barra 10 px, pico 300 ms y caída 0.65/s con timer GUI de 40 ms. Silencio bajo
+  el suelo visual, señal con dB y error del trabajador se distinguen en español.
+  Una sola medición; cancelación entre ventanas, cierre diferido y restauración
+  del flag previo. No se guarda audio ni se invoca STT/TTS/brain.
+- Halo/cuerpo/highlight/sombra caben con padding interno 6, sin máscara circular
+  sobre el blob. Respiración 1–1.02 y parpadeo 3–7 s se conservan; mirada IDLE
+  ±2 cada 4–9 s, squash breve y clic/teclado con recoil y bocadillo propio 1.6 s.
+  Esa reacción no cambia ningún estado lógico ni flag, ni simula inferencia.
+
+Deuda artística conocida: la identidad profunda del personaje y sensación de
+vida dentro del PC siguen pendientes de exploración/aprobación humana. Esta
+ronda aporta vida mínima original, no arte definitivo ni integración inteligente.
+STT y brain siguen fuera del alcance de Fase 4 y no se inicia Fase 5.
+
+Verificación final sin hardware: pytest completo, QT_QPA_PLATFORM=offscreen,
+EON_RUN_VOICE_INTEGRATION=0 y EON_RUN_OLLAMA_INTEGRATION=0:
+411 passed, 2 skipped in 3.61s, sin fallos; 45 casos adicionales frente a 366.
+Informe local ignorado .runtime/fase4_polish_mocked.xml. Se prueban escala RMS,
+pico con reloj, captura continua simulada, silencio/señal/error, cancelación,
+cierre seguro, forma por geometría/morph interrumpido, tamaños/clamp, tarjetas,
+validación/guardado, vida/clic y halo incluso con movimientos máximos.
+El test antiguo de copias de configuración asumía siempre 15 s pese a la
+preferencia personal actual de 3 s: ahora compara con el dato realmente
+inyectado, sin alterar producción ni las preferencias de Pablo. Los tests de
+lista vacía usan una lista aislada, no dependen de sus accesos personales.
+
+Se revisan renders propios de panel, bocadillo, diálogo, PEEK y hover en
+.runtime/fase4_polish_*.png. Fuente Segoe UI del sistema cargada solo para
+diagnóstico offscreen, sin copiarla. Contrastes calculados: texto principal
+#f0f2f6 sobre #292d37 12.29:1; secundario #b9c1d0 7.61:1; error #ffb3b3 sobre
+#121318 10.91:1, todos superiores a AA 4.5:1. Bucle Qt del harness comprobado
+offscreen: cerrar controles termina notch y retorna 0, sin captura/guardado real.
+Búsqueda de marcadores de código incompleto en Python fuera de tests y nombres
+externos prohibidos en código/docs: vacía. Ollama muestra solo cabecera.
+
+user_settings.json ya estaba modificado por la prueba humana; se preserva
+byte a byte (SHA256 678B5DB676C72B810B0BC796A583469F024083F190789247A002A1840415F015)
+y se excluye del commit, por lo que ese cambio previo seguirá visible en status.
+docs/BUDGET.md inicia el registro con lecturas 17 %→19 % del límite semanal de
+cuenta: aproximadamente 2 puntos, redondeados/compartidos, sin atribución exacta
+de tokens ni USD a esta sesión. Solo se autoriza commit nuevo/push de esta rama.
+
+Revisión pendiente de Pablo en su pantalla real, sin variable offscreen:
+
+```powershell
+Set-Location C:\Dev\Eon
+Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+& .\.venv\Scripts\python.exe .\scripts\fase4_notch_harness.py
+```
+
+Validar ondas en siete estados y tres geometrías, ancho, tarjetas y guardado,
+auto-hide/foco, halo y mirada, clic con bocadillo y estado conservado. Micrófono:
+activar, hablar a distintos niveles, observar señal/pico, volver a pulsar para
+detener y cerrar durante captura; esta prueba física no se hizo aquí. Medidor
+real implementado, transcripción/respuesta pendientes. Offscreen no acredita
+composición, periféricos ni fluidez física. La rama se conserva; esperar validación
+humana antes de merge o Fase 5.

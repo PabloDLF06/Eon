@@ -28,11 +28,13 @@ def app() -> QApplication:
 
 
 @pytest.fixture
-def notch(app: QApplication):
+def notch(app: QApplication, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(config, "get_quick_launch_shortcuts", lambda: [])
     window = NotchWindow(NotchController(clock=lambda: 0.0))
     window.controller.expand()
     window.refresh()
     window._geometry_animation.setCurrentTime(window._geometry_animation.duration())
+    window._shape_animation.setCurrentTime(window._shape_animation.duration())
     window.show()
     app.processEvents()
     yield window
@@ -107,7 +109,7 @@ def test_settings_opens_single_real_dialog_and_applies_live(notch: NotchWindow,
 def test_screen_proportional_sizes(width: int, closed: int) -> None:
     assert panel_size_for_screen(NotchGeometryState.PEEK, width, 1080).width() == closed
     assert panel_size_for_screen(NotchGeometryState.HOVER_PEEK, width, 1080).height() == 27
-    assert panel_size_for_screen(NotchGeometryState.EXPANDED, width, 1080).width() == 460
+    assert panel_size_for_screen(NotchGeometryState.EXPANDED, width, 1080).width() == 680
 
 
 def test_small_screen_clamps_instead_of_extending_outside() -> None:
@@ -126,11 +128,11 @@ def test_actual_native_size_animates_in_parallel_and_stays_edge_anchored(notch: 
     assert notch.size() == before
     assert notch._geometry_animation.animationCount() == 3
     notch._geometry_animation.setCurrentTime(90)
-    assert before.height() < notch.height() < 280
+    assert before.height() < notch.height() < 300
     assert 0 < notch._reveal < 1 and 0 < notch._content_effect.opacity() < 1
     assert notch.y() == notch._screen_area.y()
     notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
-    assert notch.height() == 280 and notch.width() == 460
+    assert notch.height() == 300 and notch.width() == 680
 
 
 def test_wave_does_not_restart_on_geometry_change(notch: NotchWindow) -> None:
@@ -145,10 +147,11 @@ def test_wave_does_not_restart_on_geometry_change(notch: NotchWindow) -> None:
         assert notch._wave_progress == progress
 
 
-def test_radial_front_changes_center_before_distant_pixels(notch: NotchWindow) -> None:
+def test_linear_front_changes_center_before_distant_pixels(notch: NotchWindow) -> None:
     notch.controller.collapse()
     notch.refresh()
     notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
+    notch._shape_animation.setCurrentTime(notch._shape_animation.duration())
     notch.controller.set_eon_state(EonState.LISTENING)
     notch.refresh()
     notch.wave_progress = 0.2
@@ -222,8 +225,7 @@ def test_microphone_button_wires_mocked_capture_and_restores_activity(notch: Not
     observed = []
     notch._meter.valueChanged.connect(observed.append)
     notch.microphone_button.click()
-    assert notch.controller.voice_active and not notch.microphone_button.isEnabled()
-    notch.start_microphone_meter()
+    assert notch.controller.voice_active and notch.microphone_button.isChecked()
     assert len(created) == 1
     for _ in range(100):
         QTest.qWait(10)
@@ -233,6 +235,115 @@ def test_microphone_button_wires_mocked_capture_and_restores_activity(notch: Not
     assert notch._microphone is None
     assert not notch.controller.voice_active and notch.microphone_button.isEnabled()
     assert "No se ha transcrito" in notch._message.text()
+
+
+@pytest.mark.parametrize("geometry", list(NotchGeometryState))
+def test_wave_shape_matches_geometry_without_changing_state(notch: NotchWindow,
+        geometry: NotchGeometryState) -> None:
+    notch.controller.set_eon_state(EonState.THINKING)
+    notch.refresh()
+    notch.wave_progress = 1.0
+    if geometry == NotchGeometryState.PEEK:
+        notch.controller.collapse()
+    elif geometry == NotchGeometryState.HOVER_PEEK:
+        notch.controller.collapse()
+        notch.controller.on_mouse_enter()
+    else:
+        notch.controller.expand()
+    notch.refresh()
+    notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
+    notch._shape_animation.setCurrentTime(notch._shape_animation.duration())
+    assert notch.shape_mix == (1.0 if geometry == NotchGeometryState.EXPANDED else 0.0)
+    assert notch.controller.eon_state == EonState.THINKING
+    # Hide child content only for the paint diagnostic; no state mutation.
+    notch._content.hide()
+    image = notch.grab().toImage()
+    x = notch.width() // 2
+    top = image.pixelColor(x, 2)
+    lower = image.pixelColor(x, notch.height() - 4)
+    assert (top == lower) == (geometry != NotchGeometryState.EXPANDED)
+
+
+def test_shape_morph_is_brief_and_continues_from_interrupted_frame(notch: NotchWindow) -> None:
+    notch.controller.collapse()
+    notch.refresh()
+    notch._shape_animation.setCurrentTime(90)
+    assert 0 < notch.shape_mix < 1
+    mix = notch.shape_mix
+    notch.controller.expand()
+    notch.refresh()
+    assert notch._shape_animation.startValue() == mix
+    assert notch._shape_animation.duration() == 180
+
+
+@pytest.mark.parametrize("rms,minimum,maximum", [(0.0, 0, 0), (0.005, 90, 100),
+                                               (0.01, 230, 250), (0.1, 700, 730), (0.4, 1000, 1000)])
+def test_visible_perceptual_levels(notch: NotchWindow, rms: float, minimum: int, maximum: int) -> None:
+    notch._update_level(rms)
+    assert minimum <= notch._meter.value() <= maximum
+    assert notch._meter.height() >= 8
+    assert notch._meter.width() > 350
+    assert ("Silencio" in notch._meter_status.text()) == (rms == 0)
+
+
+def test_microphone_toggle_stops_one_continuous_worker(notch: NotchWindow,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    from gui.notch_controls import MicrophoneLevelWorker
+    def capture(seconds: float) -> float:
+        time.sleep(0.01)
+        return 0.1
+    worker = MicrophoneLevelWorker(notch, detector_factory=lambda: Mock(
+        last_error=None, get_input_level=Mock(side_effect=capture)))
+    monkeypatch.setattr(notch_qt, "MicrophoneLevelWorker", lambda parent: worker)
+    notch.microphone_button.click()
+    QTest.qWait(40)
+    assert notch._microphone is worker and notch.microphone_button.isChecked()
+    notch.microphone_button.click()
+    assert worker._cancel.is_set()
+    for _ in range(100):
+        QTest.qWait(10)
+        if notch._microphone is None:
+            break
+    assert notch._microphone is None and not notch.controller.voice_active
+
+
+def test_microphone_failure_is_not_displayed_as_silence(notch: NotchWindow,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    from gui.notch_controls import MicrophoneLevelWorker
+    worker = MicrophoneLevelWorker(notch, detector_factory=lambda: Mock(
+        last_error="Dispositivo inaccesible", get_input_level=Mock(return_value=0)))
+    monkeypatch.setattr(notch_qt, "MicrophoneLevelWorker", lambda parent: worker)
+    notch.start_microphone_meter()
+    for _ in range(100):
+        QTest.qWait(10)
+        if notch._microphone is None:
+            break
+    assert worker.last_error == "Dispositivo inaccesible"
+    assert notch._meter_status.text() == "Error de micrófono"
+    assert "No se pudo" in notch._message.text()
+
+
+def test_character_click_feedback_does_not_change_controller(notch: NotchWindow) -> None:
+    notch.controller.set_eon_state(EonState.THINKING)
+    notch.controller.notify_draft_activity(True)
+    notch.refresh()
+    before = (notch.controller.eon_state, notch.controller.geometry_state,
+              notch.controller.voice_active, notch.controller.draft_active, notch.controller.vision_active)
+    QTest.mouseClick(notch.character, Qt.MouseButton.LeftButton)
+    assert notch._character_bubble.isVisible()
+    assert notch._character_bubble.text() == "Aquí sigo."
+    assert notch._bubble_timer.interval() == 1600
+    notch.character._recoil_animation.setCurrentTime(90)
+    assert notch.character.recoil_amount == 1
+    notch._bubble_timer.timeout.emit()
+    assert not notch._character_bubble.isVisible()
+    assert before == (notch.controller.eon_state, notch.controller.geometry_state,
+                      notch.controller.voice_active, notch.controller.draft_active, notch.controller.vision_active)
+
+
+@pytest.mark.parametrize("width,expected", [(704, 680), (650, 626), (584, 560), (400, 376)])
+def test_expanded_width_physical_limit_precedes_nominal_minimum(width: int, expected: int) -> None:
+    assert panel_size_for_screen(NotchGeometryState.EXPANDED, width, 900).width() == expected
 
 
 def test_close_requests_meter_cancel_and_defers_destruction(notch: NotchWindow,

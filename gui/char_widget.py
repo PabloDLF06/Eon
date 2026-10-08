@@ -5,16 +5,19 @@ icons or sprites. This is complete vector drawing and animated state logic.
 """
 
 import math
+import logging
 import random
 from types import MappingProxyType
 
-from PyQt6.QtCore import QEasingCurve, QPauseAnimation, QPropertyAnimation, QRectF, QSequentialAnimationGroup, Qt, QTimer, pyqtProperty
-from PyQt6.QtGui import QColor, QHideEvent, QLinearGradient, QPaintEvent, QPainter, QPainterPath, QPen, QRadialGradient, QShowEvent
+from PyQt6.QtCore import QEasingCurve, QPauseAnimation, QPropertyAnimation, QRectF, QSequentialAnimationGroup, Qt, QTimer, pyqtProperty, pyqtSignal
+from PyQt6.QtGui import QColor, QFocusEvent, QHideEvent, QKeyEvent, QLinearGradient, QMouseEvent, QPaintEvent, QPainter, QPainterPath, QPen, QRadialGradient, QShowEvent
 from PyQt6.QtWidgets import QWidget
 
 from core.eon_state import EonState, STATE_LABELS, state_color
 
 COLOR_TRANSITION_MS = 220
+ART_PADDING = 6
+logger = logging.getLogger(__name__)
 WARM_TONE = "#e9d3b8"
 BADGE_DESIGNS = MappingProxyType({
     EonState.IDLE: "Círculo con guion corto",
@@ -51,6 +54,8 @@ def _blend(first: QColor, second: QColor, weight: float) -> QColor:
 class CharWidget(QWidget):
     """Animate original vector artwork while keeping the public state API intact."""
 
+    clicked = pyqtSignal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._state = EonState.IDLE
@@ -60,9 +65,18 @@ class CharWidget(QWidget):
         self._source_weights = dict(self._weights)
         self._breath_phase = 0.0
         self._blink = 0.0
+        self._glance = 0.0
+        self._squash = 0.0
+        self._recoil = 0.0
+        self._keyboard_focus = False
         self.setMinimumSize(48, 48)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setToolTip("Saludar a Eon")
+        try:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        except Exception:
+            logger.exception("No se pudo configurar el cursor del personaje.")
         self.setAccessibleName("Personaje de Eon")
         self.setAccessibleDescription(STATE_LABELS[self._state])
         self._animation = QPropertyAnimation(self, b"display_color", self)
@@ -90,9 +104,111 @@ class CharWidget(QWidget):
         self._blink_timer.setSingleShot(True)
         self._blink_timer.timeout.connect(self._start_blink)
         self._blink_animation.finished.connect(self._schedule_blink)
+        self._glance_animation = QSequentialAnimationGroup(self)
+        self._glance_out = QPropertyAnimation(self, b"glance_offset")
+        self._glance_out.setDuration(260)
+        self._glance_out.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._glance_animation.addAnimation(self._glance_out)
+        self._glance_animation.addAnimation(QPauseAnimation(340))
+        self._glance_back = QPropertyAnimation(self, b"glance_offset")
+        self._glance_back.setDuration(340)
+        self._glance_back.setEndValue(0.0)
+        self._glance_back.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._glance_animation.addAnimation(self._glance_back)
+        self._glance_timer = QTimer(self)
+        self._glance_timer.setSingleShot(True)
+        self._glance_timer.timeout.connect(self._start_glance)
+        self._glance_animation.finished.connect(self._schedule_glance)
+        self._squash_animation = self._make_motion(b"squash_amount", 80, 190)
+        self._recoil_animation = self._make_motion(b"recoil_amount", 90, 240)
+
+    def _make_motion(self, property_name: bytes, outward_ms: int, return_ms: int) -> QSequentialAnimationGroup:
+        group = QSequentialAnimationGroup(self)
+        for start, end, duration in ((0.0, 1.0, outward_ms), (1.0, 0.0, return_ms)):
+            animation = QPropertyAnimation(self, property_name)
+            animation.setStartValue(start)
+            animation.setEndValue(end)
+            animation.setDuration(duration)
+            animation.setEasingCurve(QEasingCurve.Type.InOutSine)
+            group.addAnimation(animation)
+        return group
+
+    def _get_glance(self) -> float:
+        return self._glance
+
+    def _set_glance(self, value: float) -> None:
+        self._glance = value
+        self.update()
+
+    glance_offset = pyqtProperty(float, fget=_get_glance, fset=_set_glance)
+
+    def _get_squash(self) -> float:
+        return self._squash
+
+    def _set_squash(self, value: float) -> None:
+        self._squash = value
+        self.update()
+
+    squash_amount = pyqtProperty(float, fget=_get_squash, fset=_set_squash)
+
+    def _get_recoil(self) -> float:
+        return self._recoil
+
+    def _set_recoil(self, value: float) -> None:
+        self._recoil = value
+        self.update()
+
+    recoil_amount = pyqtProperty(float, fget=_get_recoil, fset=_set_recoil)
+
+    def _schedule_glance(self) -> None:
+        if self.isVisible() and self._state == EonState.IDLE:
+            self._glance_timer.start(random.randint(4000, 9000))
+
+    def _start_glance(self) -> None:
+        if self.isVisible() and self._state == EonState.IDLE:
+            target = random.choice((-2.0, 2.0))
+            self._glance_out.setStartValue(self._glance)
+            self._glance_out.setEndValue(target)
+            self._glance_back.setStartValue(target)
+            self._glance_animation.start()
+
+    def _activate(self) -> None:
+        self._recoil_animation.stop()
+        self._recoil_animation.start()
+        self.clicked.emit()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        try:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self._activate()
+                event.accept()
+            else:
+                super().mousePressEvent(event)
+        except Exception:
+            logger.exception("No se pudo procesar el clic del personaje.")
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        try:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Space):
+                self._activate()
+                event.accept()
+            else:
+                super().keyPressEvent(event)
+        except Exception:
+            logger.exception("No se pudo procesar la tecla del personaje.")
 
     def _get_breath_phase(self) -> float:
         return self._breath_phase
+
+    def focusInEvent(self, event: QFocusEvent) -> None:
+        self._keyboard_focus = event.reason() in (Qt.FocusReason.TabFocusReason, Qt.FocusReason.BacktabFocusReason)
+        self.update()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:
+        self._keyboard_focus = False
+        self.update()
+        super().focusOutEvent(event)
 
     def _set_breath_phase(self, phase: float) -> None:
         self._breath_phase = phase
@@ -121,12 +237,20 @@ class CharWidget(QWidget):
         if self._state == EonState.IDLE:
             self._breath_animation.start()
         self._schedule_blink()
+        self._schedule_glance()
         super().showEvent(event)
 
     def hideEvent(self, event: QHideEvent) -> None:
         self._breath_animation.stop()
         self._blink_timer.stop()
         self._blink_animation.stop()
+        self._glance_timer.stop()
+        self._glance_animation.stop()
+        self._squash_animation.stop()
+        self._recoil_animation.stop()
+        self._set_glance(0.0)
+        self._set_squash(0.0)
+        self._set_recoil(0.0)
         self._set_breath_phase(0.0)
         self._set_blink_progress(0.0)
         super().hideEvent(event)
@@ -169,6 +293,13 @@ class CharWidget(QWidget):
         self._detail_animation.stop()
         self._source_weights = dict(self._weights)
         self._state = state
+        self._glance_timer.stop()
+        self._glance_animation.stop()
+        self._set_glance(0.0)
+        self._schedule_glance()
+        if self.isVisible():
+            self._squash_animation.stop()
+            self._squash_animation.start()
         self._breath_animation.stop()
         self._set_breath_phase(0.0)
         if state == EonState.IDLE and self.isVisible():
@@ -247,17 +378,18 @@ class CharWidget(QWidget):
         painter.setPen(QPen(QColor("#27232a"), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.setBrush(QColor("#27232a"))
         for x in (37, 59):
+            x += self._glance if state == EonState.IDLE else 0
             if self._blink > 0.85:
-                painter.drawLine(x - 3, 32, x + 3, 32)
+                painter.drawLine(round(x - 3), 32, round(x + 3), 32)
             elif state == EonState.IDLE:
                 eye = QPainterPath()
                 eye.moveTo(x - 3, 31)
                 eye.quadTo(x, 29 + 2 * self._blink, x + 3, 31)
                 painter.drawPath(eye)
             elif state == EonState.ERROR:
-                painter.drawLine(x - 3, 29, x + 2, 34)
+                painter.drawLine(round(x - 3), 29, round(x + 2), 34)
             elif state == EonState.BUILDING:
-                painter.drawLine(x - 3, 31, x + 3, 31)
+                painter.drawLine(round(x - 3), 31, round(x + 3), 31)
             else:
                 tall = (7 if state in (EonState.LISTENING, EonState.VISION_ACTIVE) else 5) * (1 - self._blink)
                 tall = max(0.8, tall)
@@ -270,12 +402,15 @@ class CharWidget(QWidget):
     def _paint_artwork(self, painter: QPainter, bounds: QRectF) -> None:
         """Share the same scalable artwork with full widgets and clipped previews."""
         painter.save()
+        bounds = bounds.adjusted(ART_PADDING, ART_PADDING, -ART_PADDING, -ART_PADDING)
         scale = min(bounds.width() / 100, bounds.height() / 68)
         painter.translate(bounds.center().x() - 50 * scale, bounds.center().y() - 34 * scale)
         painter.scale(scale, scale)
         breath_scale = 1.0 + 0.01 * (1 - math.cos(self._breath_phase))
         painter.translate(50, 54)
-        painter.scale(breath_scale, breath_scale)
+        painter.translate(0, -2 * self._recoil)
+        painter.scale(breath_scale * (1 + 0.035 * self._squash),
+                      breath_scale * (1 - 0.045 * self._squash - 0.02 * self._recoil))
         painter.translate(-50, -54)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         contact = QRadialGradient(49, 56, 37)
@@ -326,5 +461,9 @@ class CharWidget(QWidget):
         painter = QPainter(self)
         try:
             self._paint_artwork(painter, QRectF(self.rect()))
+            if self.hasFocus() and self._keyboard_focus:
+                painter.setPen(QPen(QColor("#f0f2f6"), 1))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(QRectF(self.rect()).adjusted(1, 1, -1, -1), 8, 8)
         finally:
             painter.end()

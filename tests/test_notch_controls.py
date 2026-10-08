@@ -12,7 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 pytest.importorskip("PyQt6")
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QRect, QThread
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QApplication, QColorDialog, QFileDialog
 
@@ -29,6 +29,7 @@ def app() -> QApplication:
 @pytest.fixture
 def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     data = deepcopy(config._SETTINGS)
+    data["quick_launch_shortcuts"] = []
     path = tmp_path / "settings.json"
     path.write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.setattr(config, "SETTINGS_PATH", path)
@@ -130,7 +131,7 @@ def test_dialog_add_choose_color_save_and_remove(app: QApplication, settings_fil
     dialog.add_shortcut()
     dialog.choose_file()
     dialog.choose_color()
-    assert dialog.table.item(0, 0).text() == "app"
+    assert dialog.cards[0].label.text() == "app"
     dialog.enabled.setChecked(False)
     dialog.seconds.setValue(5)
     saved = Mock()
@@ -139,7 +140,7 @@ def test_dialog_add_choose_color_save_and_remove(app: QApplication, settings_fil
     saved.assert_called_once()
     assert config.get_quick_launch_shortcuts() == [{"label": "app", "path": str(tmp_path / "app.exe"), "color": "#39ff88"}]
     second = SettingsDialog()
-    second.table.selectRow(0)
+    second._selected_card = second.cards[0]
     second.remove_shortcut()
     second.save()
     assert config.get_quick_launch_shortcuts() == []
@@ -203,3 +204,68 @@ def test_meter_cancel_prevents_capture(app: QApplication) -> None:
     worker.stop()
     worker.run()
     detector.get_input_level.assert_not_called()
+
+
+def test_dark_cards_presets_keep_custom_seconds(app: QApplication, settings_file: Path) -> None:
+    config._SETTINGS["notch_auto_hide_seconds"] = 7
+    dialog = SettingsDialog()
+    assert dialog.seconds.value() == 7 and dialog.presets.currentData() is None
+    assert dialog.size().width() <= 520 and dialog.size().height() <= 560
+    assert "#121318" in dialog.styleSheet()
+    dialog.presets.setCurrentIndex(dialog.presets.findData(20))
+    assert dialog.seconds.value() == 20
+    dialog.add_shortcut()
+    assert len(dialog.cards) == 1
+    dialog.cards[0].path = "C:/very/long/path/" + "segment/" * 20 + "app.exe"
+    dialog.cards[0]._refresh_data()
+    assert dialog.cards[0].path_label.toolTip() == dialog.cards[0].path
+    dialog.close()
+
+
+def test_card_actions_choose_directory_and_delete_only_that_card(app: QApplication,
+        settings_file: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    dialog = SettingsDialog()
+    dialog.add_shortcut()
+    first = dialog.cards[0]
+    dialog.add_shortcut()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args: str(tmp_path))
+    first._select_and_call(dialog.choose_directory)
+    assert first.path == str(tmp_path) and first.label.text() == tmp_path.stem
+    first._select_and_call(dialog.remove_shortcut)
+    assert len(dialog.cards) == 1 and dialog.cards[0] is not first
+    dialog.close()
+
+
+def test_continuous_worker_does_not_stop_at_old_three_second_deadline(app: QApplication,
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+    monkeypatch.setattr(notch_controls.time, "monotonic", lambda: now[0])
+    worker = MicrophoneLevelWorker()
+    def capture(seconds: float) -> float:
+        assert seconds == 0.12
+        now[0] += 1
+        if now[0] == 6:
+            worker.stop()
+        return 0.01
+    detector = Mock(last_error=None, get_input_level=Mock(side_effect=capture))
+    worker._detector_factory = lambda: detector
+    levels = []
+    worker.level.connect(levels.append)
+    worker.run()
+    assert len(levels) == 6 and worker.last_error is None
+
+
+@pytest.mark.parametrize("duration", [True, 0, -1, float("inf"), float("nan"), "3"])
+def test_worker_rejects_invalid_duration(app: QApplication, duration: object) -> None:
+    with pytest.raises(ValueError):
+        MicrophoneLevelWorker(duration=duration)
+
+
+def test_dialog_clamps_to_small_screen_without_native_minimum_expanding_it(app: QApplication,
+        settings_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(SettingsDialog, "screen", lambda self: Mock(availableGeometry=lambda: QRect(0, 0, 400, 450)))
+    dialog = SettingsDialog()
+    dialog.show()
+    app.processEvents()
+    assert dialog.width() <= 376 and dialog.height() <= 426
+    dialog.close()

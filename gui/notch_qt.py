@@ -1,25 +1,27 @@
-"""Render an edge-anchored radial-state notch with honest, functional local controls."""
+"""Render an edge-anchored state wave and honest, functional local controls."""
 
 import logging
 import math
 
 from PyQt6.QtCore import (QEasingCurve, QEvent, QParallelAnimationGroup,
-                         QPropertyAnimation, QRect, QRectF, QSizeF, Qt, QTimer, pyqtProperty, pyqtSignal)
+                         QPoint, QPropertyAnimation, QRect, QRectF, QSizeF, Qt, QTimer, pyqtProperty, pyqtSignal)
 from PyQt6.QtGui import (QColor, QCloseEvent, QEnterEvent, QKeyEvent, QMouseEvent,
-                        QPaintEvent, QPainter, QPainterPath, QRadialGradient, QScreen)
+                        QLinearGradient, QPaintEvent, QPainter, QPainterPath, QRadialGradient, QScreen)
 from PyQt6.QtWidgets import (QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout,
-                            QLabel, QLineEdit, QProgressBar, QPushButton, QScrollArea,
+                            QLabel, QLineEdit, QPushButton, QScrollArea,
                             QVBoxLayout, QWidget)
 
 import config
 from core.eon_state import EonState, STATE_LABELS, state_color
 from gui.char_widget import CharWidget
-from gui.notch_controls import IconButton, MicrophoneLevelWorker, SettingsDialog, launch_shortcut
+from gui.notch_controls import (EON_STYLE, IconButton, MicrophoneLevelWorker, PeakLevelBar,
+                                SettingsDialog, SpeechBubble, launch_shortcut)
+from gui.microphone_meter import MicrophoneMeter
 from gui.notch_window import NotchController, NotchGeometryState
 
 logger = logging.getLogger(__name__)
 PANEL_SIZES = {NotchGeometryState.PEEK: (300, 16), NotchGeometryState.HOVER_PEEK: (300, 27),
-               NotchGeometryState.EXPANDED: (460, 280)}
+               NotchGeometryState.EXPANDED: (680, 300)}
 PANEL_PADDING = 18
 EXPAND_DURATION_MS = 330
 COLLAPSE_DURATION_MS = 290
@@ -59,6 +61,8 @@ class NotchWindow(QWidget):
         self._wave_progress = 1.0
         self._wave_base = self._state_tint(self._wave_state)
         self._wave_target = QColor(self._wave_base)
+        self._shape_mix = 1.0 if self._visual_geometry == NotchGeometryState.EXPANDED else 0.0
+        self._meter_model = MicrophoneMeter()
         self._microphone: MicrophoneLevelWorker | None = None
         self._voice_before_meter = False
         self._close_pending = False
@@ -67,6 +71,7 @@ class NotchWindow(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowTitle("Eon — Notch")
         self.setAccessibleName("Panel de estado de Eon")
+        self.setStyleSheet(EON_STYLE)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         try:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -82,6 +87,16 @@ class NotchWindow(QWidget):
         self._wave_animation = QPropertyAnimation(self, b"wave_progress", self)
         self._wave_animation.setDuration(WAVE_DURATION_MS)
         self._wave_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._shape_animation = QPropertyAnimation(self, b"shape_mix", self)
+        self._shape_animation.setDuration(180)
+        self._shape_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._meter_timer = QTimer(self)
+        self._meter_timer.setInterval(40)
+        self._meter_timer.timeout.connect(self._refresh_peak)
+        self._bubble_timer = QTimer(self)
+        self._bubble_timer.setSingleShot(True)
+        self._bubble_timer.setInterval(1600)
+        self._bubble_timer.timeout.connect(self._character_bubble.hide)
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_INTERVAL_MS)
         self._timer.timeout.connect(self.refresh)
@@ -100,12 +115,13 @@ class NotchWindow(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         header_widget = QWidget()
-        header_widget.setFixedHeight(68)
+        header_widget.setFixedHeight(76)
         header = QHBoxLayout(header_widget)
         header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(12)
         self.character = CharWidget(self._content)
-        self.character.setFixedSize(100, 68)
+        self.character.setFixedSize(120, 76)
+        self.character.clicked.connect(self._character_clicked)
         header.addWidget(self.character)
         surface = QFrame()
         surface.setStyleSheet("QFrame {background: rgba(8, 10, 16, 210); border-radius: 9px;}"
@@ -123,6 +139,9 @@ class NotchWindow(QWidget):
         self.settings_button = IconButton("gear", "Configurar notch", self._content)
         self.settings_button.clicked.connect(self.open_settings)
         header.addWidget(self.settings_button)
+        self._character_bubble = SpeechBubble(header_widget)
+        self._character_bubble.hide()
+        self._bubble_index = 0
         layout.addWidget(header_widget)
         self._shortcuts_scroll = QScrollArea()
         self._shortcuts_scroll.setWidgetResizable(True)
@@ -139,15 +158,17 @@ class NotchWindow(QWidget):
         self._message.setStyleSheet("color: #f0f2f6; font-size: 12px; background: rgba(8, 10, 16, 210);"
                                    "border-radius: 8px; padding: 7px;")
         layout.addWidget(self._message)
-        self._meter = QProgressBar()
-        self._meter.setRange(0, 1000)
+        meter_row = QHBoxLayout()
+        meter_row.setSpacing(12)
+        self._meter_status = QLabel("Micrófono inactivo")
+        self._meter_status.setStyleSheet("color: #b9c1d0; font-size: 11px;")
+        self._meter_status.setFixedWidth(138)
+        self._meter_status.setFixedHeight(18)
+        meter_row.addWidget(self._meter_status)
+        self._meter = PeakLevelBar()
         self._meter.setValue(0)
-        self._meter.setTextVisible(False)
-        self._meter.setFixedHeight(6)
-        self._meter.setAccessibleName("Nivel real de micrófono")
-        self._meter.setStyleSheet("QProgressBar {background: #161a23; border: 0; border-radius: 3px;}"
-                                 "QProgressBar::chunk {background: #00e5ff; border-radius: 3px;}")
-        layout.addWidget(self._meter)
+        meter_row.addWidget(self._meter, 1)
+        layout.addLayout(meter_row)
         row = QHBoxLayout()
         row.setSpacing(8)
         self.text_input = QLineEdit()
@@ -161,7 +182,8 @@ class NotchWindow(QWidget):
         self.text_input.textChanged.connect(self._draft_changed)
         self.text_input.returnPressed.connect(self._send_input)
         row.addWidget(self.text_input, 1)
-        self.microphone_button = IconButton("microphone", "Medir micrófono durante tres segundos")
+        self.microphone_button = IconButton("microphone", "Activar o detener el medidor de micrófono")
+        self.microphone_button.setCheckable(True)
         self.microphone_button.clicked.connect(self.start_microphone_meter)
         row.addWidget(self.microphone_button)
         self.send_button = IconButton("send", "Enviar mensaje")
@@ -172,6 +194,18 @@ class NotchWindow(QWidget):
         self._content.setGraphicsEffect(self._content_effect)
         self._label_effects = [self._content_effect]
         self._rebuild_shortcuts()
+
+    def _character_clicked(self) -> None:
+        phrases = ("Aquí sigo.", "Te escucho.", "Estoy aquí.")
+        self._character_bubble.setText(phrases[self._bubble_index % len(phrases)])
+        self._bubble_index += 1
+        self._character_bubble.adjustSize()
+        title_position = self._title.mapTo(self._character_bubble.parentWidget(), QPoint(0, 0))
+        self._character_bubble.move(title_position.x() + self._title.fontMetrics().horizontalAdvance("Eon") + 12,
+                                    max(0, title_position.y() - 6))
+        self._character_bubble.show()
+        self._character_bubble.raise_()
+        self._bubble_timer.start()
 
     def _rebuild_shortcuts(self) -> None:
         container = QWidget()
@@ -202,7 +236,7 @@ class NotchWindow(QWidget):
         if old is not None:
             old.deleteLater()
         self._shortcuts_scroll.setVisible(bool(self.shortcut_buttons))
-        order = [self.settings_button, *self.shortcut_buttons, self.text_input,
+        order = [self.character, self.settings_button, *self.shortcut_buttons, self.text_input,
                  self.microphone_button, self.send_button]
         for first, second in zip(order, order[1:]):
             QWidget.setTabOrder(first, second)
@@ -263,27 +297,52 @@ class NotchWindow(QWidget):
     def start_microphone_meter(self) -> None:
         """Start at most one worker; leave every GUI update on the main thread."""
         if self._microphone is not None:
+            self._microphone.stop()
+            self.microphone_button.setChecked(False)
+            self._meter_status.setText("Deteniendo…")
             return
         self._voice_before_meter = self.controller.voice_active
         try:
             worker = MicrophoneLevelWorker(self)
             self._microphone = worker
             self.controller.notify_voice_activity(True)
-            self.microphone_button.setEnabled(False)
+            self.microphone_button.setChecked(True)
+            self._meter_model.reset()
             self._meter.setValue(0)
-            self._message.setText("Midiendo el nivel real de voz durante tres segundos; sin transcripción.")
+            self._meter_status.setText("Esperando señal…")
+            self._message.setText("Medidor activo. Pulsa de nuevo el micrófono para detenerlo; sin transcripción.")
             worker.level.connect(self._update_level)
-            worker.result.connect(self._message.setText)
+            worker.result.connect(self._meter_result)
             worker.finished.connect(self._microphone_finished)
             worker.start()
+            self._meter_timer.start()
         except Exception as exc:
             self._report_error("No se pudo iniciar el medidor del micrófono", exc)
             self._message.setText("No se pudo iniciar el micrófono.")
             self._microphone_finished()
+            self._meter_status.setText("Error de micrófono")
 
     def _update_level(self, rms: float) -> None:
-        self._meter.setValue(round(min(1.0, math.sqrt(max(0.0, rms))) * 1000))
-        self._meter.setAccessibleDescription(f"Nivel RMS real: {rms:.4f}")
+        try:
+            level = self._meter_model.update(rms)
+            self._meter.setValue(round(level * 1000))
+            self._refresh_peak()
+            db = 20 * math.log10(max(rms, 1e-6))
+            self._meter_status.setText(f"Señal · {db:.0f} dB" if level > 0 else "Silencio")
+            self._meter.setAccessibleDescription(f"RMS: {rms:.5f}; {db:.1f} dB; nivel: {level:.0%}")
+        except Exception as exc:
+            self._report_error("No se pudo representar el nivel del micrófono", exc)
+            self._meter_status.setText("Error de micrófono")
+
+    def _refresh_peak(self) -> None:
+        self._meter.peak = self._meter_model.tick()
+        self._meter.update()
+
+    def _meter_result(self, message: str) -> None:
+        self._message.setText(message)
+        if self._microphone is not None and self._microphone.last_error is not None:
+            self._meter_status.setText("Error de micrófono")
+            self._meter.setAccessibleDescription("Error de captura; no es silencio.")
 
     def _microphone_finished(self) -> None:
         worker, self._microphone = self._microphone, None
@@ -291,7 +350,13 @@ class NotchWindow(QWidget):
             worker.deleteLater()
         self.controller.notify_voice_activity(self._voice_before_meter)
         self.microphone_button.setEnabled(True)
+        self.microphone_button.setChecked(False)
+        self._meter_timer.stop()
+        self._meter_model.reset()
+        self._meter.peak = 0
         self._meter.setValue(0)
+        if worker is None or worker.last_error is None:
+            self._meter_status.setText("Micrófono inactivo")
         if self._close_pending:
             self.close()
 
@@ -340,6 +405,8 @@ class NotchWindow(QWidget):
         expanded = self.controller.geometry_state == NotchGeometryState.EXPANDED
         self._content.setVisible(expanded)
         self.character.setVisible(expanded)
+        if not expanded:
+            self._character_bubble.hide()
         self._content_effect.setOpacity(self._opacity)
 
     @staticmethod
@@ -356,6 +423,15 @@ class NotchWindow(QWidget):
         self.update()
 
     wave_progress = pyqtProperty(float, fget=_get_wave_progress, fset=_set_wave_progress)
+
+    def _get_shape_mix(self) -> float:
+        return self._shape_mix
+
+    def _set_shape_mix(self, progress: float) -> None:
+        self._shape_mix = max(0.0, min(1.0, progress))
+        self.update()
+
+    shape_mix = pyqtProperty(float, fget=_get_shape_mix, fset=_set_shape_mix)
 
     def _start_state_wave(self) -> None:
         state = self.controller.eon_state
@@ -407,6 +483,10 @@ class NotchWindow(QWidget):
     def _animate_geometry(self, target: QSizeF) -> None:
         self._geometry_animation.stop()
         expanded = self.controller.geometry_state == NotchGeometryState.EXPANDED
+        self._shape_animation.stop()
+        self._shape_animation.setStartValue(self._shape_mix)
+        self._shape_animation.setEndValue(1.0 if expanded else 0.0)
+        self._shape_animation.start()
         duration = EXPAND_DURATION_MS if expanded else COLLAPSE_DURATION_MS
         curve = QEasingCurve(QEasingCurve.Type.OutBack if expanded else QEasingCurve.Type.OutQuad)
         if expanded:
@@ -515,6 +595,9 @@ class NotchWindow(QWidget):
         self._timer.stop()
         self._geometry_animation.stop()
         self._wave_animation.stop()
+        self._shape_animation.stop()
+        self._bubble_timer.stop()
+        self._meter_timer.stop()
         self.character.hide()
         if self._settings_dialog is not None:
             self._settings_dialog.reject()
@@ -544,39 +627,48 @@ class NotchWindow(QWidget):
             capsule.closeSubpath()
             painter.setPen(Qt.PenStyle.NoPen)
             painter.fillPath(capsule, QColor(CAPSULE_COLOR))
-            # Elliptical normalization keeps the same wave visible at every native height.
             painter.setClipPath(capsule)
-            painter.save()
-            painter.translate(right / 2, bottom * 0.40)
-            painter.scale(right / 2, max(1.0, bottom * 0.8))
-            base = QRadialGradient(0, 0, 1)
-            base.setColorAt(0, self._wave_target if self._wave_progress == 1.0 else self._wave_base)
-            base.setColorAt(1, QColor(CAPSULE_COLOR))
-            painter.fillRect(QRectF(-1, -1, 2, 2), base)
-            progress = self._wave_progress
-            wave = QRadialGradient(0, 0, max(0.001, progress))
-            tint = QColor(self._wave_target)
-            tint.setAlphaF(min(1.0, progress * 8))
-            wave.setColorAt(0, tint)
-            tint.setAlpha(0)
-            wave.setColorAt(1, tint)
-            painter.fillRect(QRectF(-1, -1, 2, 2), wave)
-            # A soft annular front distinguishes a growing wave from a global color fade.
-            if 0 < progress < 1:
-                front = QRadialGradient(0, 0, max(0.001, progress))
-                color = QColor(state_color(self._wave_state))
-                color.setAlpha(round(24 * math.sin(math.pi * progress)))
-                clear = QColor(color)
-                clear.setAlpha(0)
-                front.setColorAt(0, clear)
-                front.setColorAt(0.70, clear)
-                front.setColorAt(0.86, color)
-                front.setColorAt(1, clear)
-                painter.fillRect(QRectF(-1, -1, 2, 2), front)
-            painter.restore()
+            self._paint_state_wave(painter, right, bottom, radial=True)
+            if self._shape_mix < 1:
+                painter.save()
+                painter.setOpacity(1 - self._shape_mix)
+                self._paint_state_wave(painter, right, bottom, radial=False)
+                painter.restore()
             if self.hasFocus() and self.controller.geometry_state == NotchGeometryState.EXPANDED:
                 painter.setPen(QColor("#f0f2f6"))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawPath(capsule)
         finally:
             painter.end()
+
+    def _paint_state_wave(self, painter: QPainter, width: float, height: float, *, radial: bool) -> None:
+        """Mirror horizontal stops in closed modes; retain the elliptical radial wave."""
+        painter.save()
+        painter.translate(width / 2, height * 0.40)
+        painter.scale(width / 2, max(1.0, height * 0.8))
+
+        def gradient(radius: float, stops: list[tuple[float, QColor]]) -> QRadialGradient | QLinearGradient:
+            radius = max(0.001, radius)
+            result = QRadialGradient(0, 0, radius) if radial else QLinearGradient(-radius, 0, radius, 0)
+            for position, color in stops:
+                if radial:
+                    result.setColorAt(position, color)
+                else:
+                    result.setColorAt((1 - position) / 2, color)
+                    result.setColorAt((1 + position) / 2, color)
+            return result
+
+        area = QRectF(-1, -1, 2, 2)
+        progress = self._wave_progress
+        base = self._wave_target if progress == 1 else self._wave_base
+        painter.fillRect(area, gradient(1, [(0, base), (1, QColor(CAPSULE_COLOR))]))
+        tint = QColor(self._wave_target)
+        tint.setAlphaF(min(1.0, progress * 8))
+        clear = QColor(tint)
+        clear.setAlpha(0)
+        painter.fillRect(area, gradient(progress, [(0, tint), (1, clear)]))
+        if 0 < progress < 1:
+            color = QColor(state_color(self._wave_state))
+            color.setAlpha(round(24 * math.sin(math.pi * progress)))
+            painter.fillRect(area, gradient(progress, [(0, clear), (0.7, clear), (0.86, color), (1, clear)]))
+        painter.restore()

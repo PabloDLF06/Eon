@@ -649,3 +649,82 @@ permite probar configuración, apertura real de accesos y captura opt-in; los si
 botones de estados y tres flags siguen siendo simulación manual, no wiring real
 de esos subsistemas. Test suites de panel/controles mockean micrófono y Popen;
 offscreen no acredita escritorio, periféricos o fluidez física.
+
+## 17. Pulido de Fase 4: forma de onda, nivel perceptivo y clic — 2026-10-08
+
+La decisión 18 actualiza la presentación/timing de medición de la sección 16,
+sin modificar NotchController ni firmas de config o handle_user_message.
+PEEK 280–320×16, HOVER_PEEK mismo ancho×27, EXPANDED nominal 680×300 con
+clamp pantalla−24/altura; mínimo nominal 560 condicionado al espacio físico.
+Padding 18 y separación 8/12; personaje oculto/reveal 0 en modos cerrados.
+Onda horizontal lineal simétrica en PEEK/hover, radial en EXPANDED. Morph de
+forma 180 ms independiente del frente de estado de 620 ms y tamaño 330/290 ms.
+Las propiedades Qt de animación siguen siendo detalles internos de render.
+
+SettingsDialog conserva saved y sus métodos públicos sin cambiar validación,
+selectores, guardado real, aplicación ni bloqueo de auto-hide. El QTableWidget
+interno se sustituye por tarjetas; no era una API congelada para consumidores.
+Selector 10/15/20 con tiempo personalizado conserva los valores existentes.
+Tamaño nominal 520×560 limitado al área disponible menos 24 por dimensión.
+
+Nuevo módulo puro gui/microphone_meter.py, sin Qt ni captura:
+
+```python
+rms_to_level(rms: float) -> float
+MicrophoneMeter(*, clock: Callable[[], float] = time.monotonic)
+MicrophoneMeter.update(self, rms: float) -> float
+MicrophoneMeter.tick(self) -> float
+MicrophoneMeter.reset(self) -> None
+```
+
+rms_to_level acepta RMS normalizado 0–1, numérico finito sin bool; datos inválidos
+lanzan ValueError en español, nunca equivalen a silencio. Devuelve nivel 0–1
+según clamp((20*log10(max(rms,1e-6))+50)/42,0,1). update publica level, actualiza
+peak y devuelve level. tick devuelve peak con hold 300 ms y caída de 0.65/s,
+limitado inferiormente a level; reset deja ambos a 0. Consumidor serializado,
+reloj monotónico inyectable; no comparte estado entre hilos.
+
+Actualización explícita del trabajador, conserva stop y señales level/result:
+
+```python
+MicrophoneLevelWorker(parent: QWidget | None = None, *, duration: float | None = None,
+                      detector_factory: Callable[[], AcousticDetector] | None = None)
+MicrophoneLevelWorker.last_error: str | None
+```
+
+None activa sondeo continuo hasta stop; una duración finita positiva sigue
+permitiendo medición acotada. level emite RMS ORIGINAL 0–1, no dB ni porcentaje.
+last_error queda None al terminar/cancelar correctamente y contiene el fallo
+si detector/captura devuelve error o RMS inválido. Fallos con logging y result
+español. No invoca modelos ni persiste audio. get_input_level usa ventanas de
+hasta 120 ms; esto no promete stream PortAudio persistente ni latencia máxima
+para apertura/cierre. Cancelación se comprueba entre esas ventanas.
+
+NotchWindow.start_microphone_meter() conserva la firma y pasa a alternar
+inicio/stop del único trabajador; el botón queda habilitado para detenerlo.
+Bloquea auto-hide con actividad de voz y restaura el flag previo al terminar.
+Su UI transforma RMS con rms_to_level: barra interna 0–1000, nivel público
+0–1, alto 10, cyan LISTENING y marca de pico independiente. Timer de 40 ms,
+solo hilo GUI. Muestra inactivo/esperando/silencio/señal/error; last_error del
+trabajador nunca se presenta como silencio. Cierre diferido hasta finished
+y señal closed se mantienen. STT/brain quedan pendientes, sin inferencia.
+
+Ampliación aditiva de CharWidget:
+
+```python
+CharWidget.clicked  # señal Qt sin argumentos
+```
+
+Emite al clic izquierdo o Enter/Espacio con foco. set_eon_state conserva firma
+y validación; clic solo activa recoil, y el panel presenta un bocadillo original
+1.6 s, sin mutar controlador ni estado lógico. No es una respuesta inteligente.
+Padding de dibujo 6 y viewport 120×76 dejan halo y cuerpo dentro del widget.
+Mirada IDLE, squash, respiración y parpadeo son detalles visuales que se paran
+al ocultarse. Foco de teclado visible; tabulación personaje→engranaje→accesos
+→texto→micrófono→enviar. Identidad profunda del personaje es deuda de arte.
+
+Tests correspondientes: test_microphone_meter.py (puro), test_char_widget.py,
+test_notch_panel.py, test_notch_controls.py; sin micrófono ni procesos reales.
+Los contratos puros previos de actividad/visión/auto-hide no cambian. Renders
+propios offscreen solo comprueban composición lógica; aprobación física humana
+pendiente, sin autorizar merge a main ni inicio de Fase 5.

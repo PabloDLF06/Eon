@@ -630,3 +630,87 @@ pendientes de fase de integración. No se conecta Whisper/Piper/brain, no se
 almacena audio, no se carga ningún modelo ni se inicia Fase 5. Tests usan
 captura y procesos simulados; la prueba real opt-in queda para Pablo en el
 harness. Main no se modifica y el commit/push se limita a la rama existente.
+
+## 18. Fase 4: pulido visual, forma de onda y medidor perceptivo — 2026-10-08
+
+Pablo validó en pantalla real 3299020 y solicitó esta corrección posterior
+en feature/fase-4-notch-gui. Esta entrada actualiza por referencia la sección
+17, que se conserva como historia: no cambia la lógica del controlador puro,
+la paleta EonState, auto-hide, prioridad de visión, entrada de texto ni guardado.
+
+PEEK y HOVER_PEEK usan ahora degradado LINEAL HORIZONTAL simétrico: una banda
+vertical central se abre hacia ambos lados durante cada cambio de estado.
+El centro conserva la mezcla suave del 23 % (IDLE 3.5 %) y los extremos
+#121318. EXPANDED conserva la onda RADIAL elíptica centro→bordes. Se mantiene
+el frente de 620 ms OutCubic; la forma lineal↔radial interpola en una pista
+independiente de 180 ms InOutCubic, partiendo de la mezcla visible si se
+interrumpe. Cambiar geometría no reinicia estado, color ni progreso del frente.
+Las superficies oscuras semitransparentes de texto y el anclaje superior sin
+separación se conservan; solo las esquinas inferiores están redondeadas.
+
+Tamaños lógicos finales: PEEK clamp(round(300×ancho_pantalla/1920),280,320)×16;
+HOVER_PEEK comparte ancho y mantiene 27 px. EXPANDED 680×300, limitado a
+ancho_pantalla−24 y altura_pantalla. En una pantalla estrecha se aprovecha
+todo el ancho disponible, manteniendo al menos 560 cuando físicamente caben;
+si ni 560 más 24 px caben, prevalece no salir de la pantalla. No se garantiza
+usabilidad plena por debajo de ese mínimo nominal. Margen 18 px, separaciones
+8/12, cabecera 76, personaje 120×76 con padding interno 6; accesos opcionales
+en fila de 46, mensajes 48, fila de nivel 18 (barra 10), entrada/botones 44.
+La ampliación usa el espacio para cabecera izquierda/estado/engranaje derecho,
+accesos, mensajes y entrada a ancho completo. Se conservan las animaciones
+nativas aprobadas: expandir 330 ms OutBack, overshoot 0.55; colapsar 290 ms
+OutQuad. QSS y pintado son propios de EON, con hover/foco y textos claros.
+
+Diálogo oscuro nominal 520×560, limitado al área disponible de pantalla menos
+24 px por dimensión. Tarjeta de auto-hide con switch propio y selector
+10/15/20 s; opción personalizada conserva cualquier entero positivo anterior
+(incluidos los 3 s locales de Pablo), sin alterarlo silenciosamente. Lista
+desplazable de tarjetas con nombre editable, ruta abreviada y tooltip íntegro,
+punto de color y eliminación individual; añadir y selectores de archivo,
+carpeta y color siguen siendo funcionales. La validación/guardado atómico,
+aplicación en vivo y bloqueo de auto-hide con el diálogo abierto no cambian.
+
+Diagnóstico del medidor anterior: ya sondeaba ventanas repetidas de hasta
+120 ms, pero terminaba a los 3 s y transformaba sqrt(RMS) en una barra de
+6 px. No era un único sample ni RMS crudo multiplicado por píxeles. Esa escala
+puede producir indicaciones muy pequeñas para señales débiles; sin repetir
+captura física no se afirma que explique por sí sola el comportamiento visto
+por Pablo. La corrección usa get_input_level en QThread continuamente hasta
+otro clic o cierre, sin duplicar trabajadores, con señales hacia el hilo GUI.
+Cada ventana puede abrir/cerrar el dispositivo: no es una nueva API de stream
+PortAudio persistente y su latencia física queda pendiente de revisión humana.
+
+Escala perceptiva congelada: db=20×log10(max(rms,1e−6));
+nivel=clamp((db+50)/42,0,1). −50 dBFS o menos es el suelo visual; −8 o más,
+100 %. Por ejemplo RMS 0.005→9.48 %, 0.01→23.81 %, 0.1→71.43 %. Barra
+cian LISTENING de 10 px y ancho dedicado; marca de pico independiente que
+retiene 300 ms y cae a 0.65 unidades/s, nunca por debajo de la señal actual.
+El reloj de ese modelo es inyectable y un timer GUI de 40 ms dibuja la caída.
+Se distinguen silencio bajo el suelo, señal con dB y error por last_error;
+errores se registran y no se presentan como silencio. Segundo clic cancela;
+cierre espera finished sin bloquear GUI ni destruir el hilo. Se restaura el
+flag de voz anterior. No se guarda audio ni se invoca STT/TTS/brain.
+
+Se preserva la superelipse original, corrigiendo el viewport/padding para que
+cuerpo, highlight, sombra y glow completos, incluso con movimiento, quepan.
+Respiración IDLE 1–1.02 y parpadeo 3–7 s se conservan. Mirada IDLE desplaza
+ojos ±2 unidades normalizadas cada 4–9 s y vuelve en 940 ms; squash 270 ms
+al cambiar estado. Clic o Enter/Espacio en el personaje hace recoil suave de
+330 ms y un bocadillo de 1.6 s que alterna «Aquí sigo.», «Te escucho.» y
+«Estoy aquí.». No cambia EonState, geometría ni flags; no es respuesta de IA.
+Los movimientos se detienen al ocultarlo, completamente invisible en PEEK/
+hover con reveal 0. Identidad profunda y sensación de vida quedan como deuda
+de arte pendiente de decisión humana, no se declaran resueltas con esta ronda.
+
+Rutas de repositorios externos consultadas EN ESTA RONDA: ninguna. No se
+vuelve a clonar ni abrir el controlador técnico anterior; no se ingiere ni
+replica ningún personaje, animación, icono, sonido o asset externo reservado.
+Todo el arte, copys y controles de esta corrección son propios. La revisión
+UI/UX orienta contraste, foco y coherencia de tarjetas, sin adoptar paletas,
+fuentes, iconos o diseños de terceros. La fuente local de sistema se usa solo
+para render diagnóstico offscreen, nunca se copia al proyecto.
+
+CONTRACTS.md §17 congela el nivel perceptivo y señal de clic. STATUS.md recoge
+tests y límites; BUDGET.md registra la estimación observable. user_settings.json
+local se preserva byte a byte y se excluye del commit. No hay instalaciones,
+cambios de módulos core/voz/safety, modelos cargados, merge a main ni Fase 5.

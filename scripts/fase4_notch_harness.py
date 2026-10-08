@@ -27,14 +27,16 @@ class ControlWindow(QWidget):
         self.setMinimumWidth(430)
         layout = QVBoxLayout(self)
         instructions = QLabel("El notch está arriba, en el centro de la pantalla principal.\n"
-                              "La cápsula comunica el estado por una onda radial suave.\n"
+                              "Onda lineal en reposo/hover y radial en el panel abierto.\n"
                               "Personaje oculto en reposo y hover; clic para panel completo.\n"
                               "Reposo sin actividad: se oculta tras el tiempo configurado.\n"
                               "Visión marcada fuerza expansión e impide colapsar.\n"
                               "Los siete botones solo simulan estados; no activan IA.\n"
                               "En el panel: engranaje para guardar ajustes y accesos reales.\n"
                               "Texto + Enter/Enviar: acuse honesto, sin respuesta de IA.\n"
-                              "Micrófono: captura RMS REAL de 3 s, sin STT ni grabación.\n"
+                              "Micrófono: medidor REAL continuo; otro clic lo detiene.\n"
+                              "Barra perceptiva y marca de pico; sin STT ni grabación.\n"
+                              "Clic en Eon: saludo breve, sin cambiar el estado lógico.\n"
                               "Los accesos configurados sí abren aplicaciones/rutas reales.")
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
@@ -112,7 +114,7 @@ def main() -> int:
         controls = ControlWindow(notch)
         notch.closed.connect(app.quit)
         print("Prueba manual de Eon: los siete botones cambian el estado, rostro, tinte e insignia del personaje.\n"
-              "La cápsula oscura presenta un degradado suave y onda radial; el personaje solo aparece expandido.\n"
+              "Onda lineal centro→lados en reposo/hover, radial en EXPANDED; personaje solo expandido.\n"
               "Las tres casillas notifican voz, borrador y visión por separado.\n"
               "Expandir/Colapsar cambian la geometría; visión activa tiene prioridad.\n"
               "Pasa el ratón por el notch para ver HOVER_PEEK; haz clic para EXPANDED.\n"
@@ -121,7 +123,9 @@ def main() -> int:
               "Engranaje: edita auto-hide y accesos, guarda y comprueba aplicación sin reiniciar.\n"
               "Accesos: abre una ruta real configurada; una ruta ausente debe mostrar aviso.\n"
               "Escribe y usa Enter/Enviar: campo limpio y acuse, sin respuesta simulada.\n"
-              "Micrófono: captura real breve y medidor en vivo, sin STT/brain ni guardar audio.\n"
+              "Micrófono: captura continua hasta otro clic, barra −50 a −8 dB y pico de 300 ms.\n"
+              "Silencio/señal/error se distinguen; sin STT/brain ni guardar audio.\n"
+              "Clic en el personaje: recoil y saludo de 1.6 s; conserva el estado lógico.\n"
               "Cerrar la prueba o cerrar la ventana de control termina ambas ventanas.\n"
               "Verde de Visión y tamaños pendientes de tu validación visual; no se carga ningún modelo.", flush=True)
         notch.show()

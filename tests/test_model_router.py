@@ -458,7 +458,7 @@ def test_config_loads_once_and_accessors_return_copies(settings_data: dict) -> N
         assert module.get_model_assignment("brain")["model"] == "qwen3:8b"
         notch = module.get_notch_settings()
         notch["notch_auto_hide_seconds"] = 1
-        assert module.get_notch_settings()["notch_auto_hide_seconds"] == 15
+        assert module.get_notch_settings()["notch_auto_hide_seconds"] == settings_data["notch_auto_hide_seconds"]
         limits = module.get_cost_limits()
         limits["daily_usd_cap"] = 999
         assert module.get_cost_limits()["daily_usd_cap"] == 2.0
