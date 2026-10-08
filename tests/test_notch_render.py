@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import QApplication, QCheckBox, QPushButton
 
 from core.eon_state import EonState, STATE_LABELS
 from gui.char_widget import BADGE_DESIGNS, CharWidget, COLOR_TRANSITION_MS
-from gui.notch_qt import CAPSULE_COLOR, PANEL_SIZES, REVEAL_LEVELS
+from gui.notch_qt import CAPSULE_COLOR, REVEAL_LEVELS, panel_size_for_screen, WAVE_DURATION_MS
 from gui.notch_window import NotchController, NotchGeometryState, NotchWindow
 from scripts.fase4_notch_harness import ControlWindow
 
@@ -20,17 +20,19 @@ def app() -> QApplication:
 
 
 @pytest.mark.parametrize("state", list(EonState))
-def test_capsule_stays_neutral_for_every_state(app: QApplication, state: EonState) -> None:
+def test_capsule_edges_remain_dark_for_every_state(app: QApplication, state: EonState) -> None:
     notch = NotchWindow(NotchController(clock=lambda: 0.0))
     notch.controller.expand()
     notch.controller.set_eon_state(state)
     notch.refresh()
-    notch._reveal_animation.setCurrentTime(COLOR_TRANSITION_MS)
+    notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
+    notch._wave_animation.setCurrentTime(WAVE_DURATION_MS)
     notch.character._animation.setCurrentTime(COLOR_TRANSITION_MS)
     notch.character._detail_animation.setCurrentTime(COLOR_TRANSITION_MS)
     notch.show()
     app.processEvents()
-    assert notch.grab().toImage().pixelColor(15, 10).name() == CAPSULE_COLOR
+    edge = notch.grab().toImage().pixelColor(2, 0)
+    assert max(edge.red(), edge.green(), edge.blue()) < 30
     assert notch._status.text() == STATE_LABELS[state]
     assert notch.character._weights[state] == 1.0
     notch.close()
@@ -67,7 +69,7 @@ def test_badge_crossfade_preserves_interrupted_mix(app: QApplication) -> None:
     character.close()
 
 
-def test_reveal_preserves_native_sizes_and_shows_crest(app: QApplication) -> None:
+def test_reveal_matches_sizes_and_completely_hides_character_when_closed(app: QApplication) -> None:
     notch = NotchWindow(NotchController(clock=lambda: 0.0))
     notch.show()
     for geometry, action in (
@@ -77,29 +79,37 @@ def test_reveal_preserves_native_sizes_and_shows_crest(app: QApplication) -> Non
     ):
         action()
         notch.refresh()
-        notch._reveal_animation.setCurrentTime(COLOR_TRANSITION_MS)
+        notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
         app.processEvents()
-        assert (notch.width(), notch.height()) == PANEL_SIZES[geometry]
+        screen = QApplication.primaryScreen().geometry()
+        expected = panel_size_for_screen(geometry, screen.width(), screen.height())
+        assert (notch.width(), notch.height()) == (round(expected.width()), round(expected.height()))
         assert notch._reveal == REVEAL_LEVELS[geometry]
         image = notch.grab().toImage()
-        if geometry == NotchGeometryState.PEEK:
-            assert image.pixelColor(notch.width() // 2, 4).red() > 130
-        else:
-            assert image.height() > 5
+        if geometry != NotchGeometryState.EXPANDED:
+            assert not notch.character.isVisible()
+            assert not notch._content.isVisible()
+            assert max(image.pixelColor(notch.width() // 2, 4).getRgb()[:3]) < 40
     assert all(effect.opacity() == pytest.approx(1.0) for effect in notch._label_effects)
     notch.close()
 
 
 def test_reveal_continues_from_current_frame_on_interruption(app: QApplication) -> None:
     notch = NotchWindow(NotchController(clock=lambda: 0.0))
-    notch.controller.on_mouse_enter()
-    notch.refresh()
-    notch._reveal_animation.setCurrentTime(COLOR_TRANSITION_MS // 2)
-    halfway = notch._reveal
     notch.controller.expand()
     notch.refresh()
-    assert notch._reveal_animation.startValue() == pytest.approx(halfway)
-    notch._reveal_animation.setCurrentTime(COLOR_TRANSITION_MS)
+    notch._geometry_animation.setCurrentTime(120)
+    halfway = notch.panel_size
+    notch.controller.collapse()
+    notch.refresh()
+    assert notch._size_animation.startValue() == halfway
+    assert notch._reveal == 0.0
+    notch._geometry_animation.setCurrentTime(100)
+    halfway = notch.panel_size
+    notch.controller.expand()
+    notch.refresh()
+    assert notch._size_animation.startValue() == halfway
+    notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
     assert notch._reveal == 1.0
     assert notch.controller.geometry_state == NotchGeometryState.EXPANDED
     notch.close()

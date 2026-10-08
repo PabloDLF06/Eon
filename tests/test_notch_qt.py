@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QApplication
 
 from core.eon_state import EonState
 from gui.notch_window import NotchController, NotchGeometryState, NotchWindow
-from gui.notch_qt import PANEL_SIZES
+from gui.notch_qt import panel_size_for_screen
 
 
 @pytest.fixture(scope="module")
@@ -29,9 +29,11 @@ def test_window_geometry_focus_and_visibility(app: QApplication) -> None:
         elif geometry == NotchGeometryState.EXPANDED:
             notch.controller.on_click()
         notch.refresh()
+        notch._geometry_animation.setCurrentTime(notch._geometry_animation.duration())
         app.processEvents()
-        assert (notch.width(), notch.height()) == PANEL_SIZES[geometry]
         screen = QApplication.primaryScreen().geometry()
+        expected = panel_size_for_screen(geometry, screen.width(), screen.height())
+        assert (notch.width(), notch.height()) == (round(expected.width()), round(expected.height()))
         assert (notch.x(), notch.y()) == (screen.x() + (screen.width() - notch.width()) // 2, screen.y())
         flags = notch.windowFlags()
         assert flags & Qt.WindowType.Tool and flags & Qt.WindowType.FramelessWindowHint

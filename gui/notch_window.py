@@ -164,6 +164,11 @@ class NotchController:
             self._geometry_state = NotchGeometryState.PEEK
             self._idle_since = None
 
+    def reload_settings(self) -> None:
+        """Apply validated cached preferences and restart the full idle interval."""
+        self._settings = config.get_notch_settings()
+        self._reset_deadline()
+
 
 def __getattr__(name: str) -> Any:
     """Make the Qt adapter available without importing Qt for pure consumers."""

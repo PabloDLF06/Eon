@@ -1,4 +1,4 @@
-"""Let Pablo exercise the real notch on his screen without connecting AI or voice."""
+"""Let Pablo exercise the real notch, settings, launchers, text and opt-in RMS."""
 
 from pathlib import Path
 from collections.abc import Callable
@@ -27,11 +27,15 @@ class ControlWindow(QWidget):
         self.setMinimumWidth(430)
         layout = QVBoxLayout(self)
         instructions = QLabel("El notch está arriba, en el centro de la pantalla principal.\n"
-                              "La cápsula es oscura; el personaje comunica el estado.\n"
-                              "En reposo asoma, con hover se revela y con clic aparece completo.\n"
+                              "La cápsula comunica el estado por una onda radial suave.\n"
+                              "Personaje oculto en reposo y hover; clic para panel completo.\n"
                               "Reposo sin actividad: se oculta tras el tiempo configurado.\n"
                               "Visión marcada fuerza expansión e impide colapsar.\n"
-                              "Los botones solo simulan estados; no activan voz ni IA.")
+                              "Los siete botones solo simulan estados; no activan IA.\n"
+                              "En el panel: engranaje para guardar ajustes y accesos reales.\n"
+                              "Texto + Enter/Enviar: acuse honesto, sin respuesta de IA.\n"
+                              "Micrófono: captura RMS REAL de 3 s, sin STT ni grabación.\n"
+                              "Los accesos configurados sí abren aplicaciones/rutas reales.")
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
         states = QGridLayout()
@@ -57,13 +61,19 @@ class ControlWindow(QWidget):
         self._status.setWordWrap(True)
         layout.addWidget(self._status)
         quit_button = QPushButton("Cerrar la prueba")
-        quit_button.clicked.connect(QApplication.instance().quit)
+        quit_button.clicked.connect(self.close)
         layout.addWidget(quit_button)
         self._timer = QTimer(self)
         self._timer.setInterval(200)
         self._timer.timeout.connect(self.update_status)
         self._timer.start()
         self.update_status()
+
+    def closeEvent(self, event: object) -> None:
+        """Stop controls and let the notch release an active microphone before exiting."""
+        self._timer.stop()
+        self.notch.close()
+        super().closeEvent(event)
 
     def change_state(self, state: EonState) -> None:
         """Apply one logical state while leaving the independent flags unchanged."""
@@ -95,18 +105,23 @@ def main() -> int:
     try:
         app = QApplication(sys.argv)
         app.setApplicationName("Eon — Diagnóstico notch")
-        app.setQuitOnLastWindowClosed(True)
+        app.setQuitOnLastWindowClosed(False)
         notch = NotchWindow(NotchController())
         notch.controller.expand()
         notch.refresh()
         controls = ControlWindow(notch)
+        notch.closed.connect(app.quit)
         print("Prueba manual de Eon: los siete botones cambian el estado, rostro, tinte e insignia del personaje.\n"
-              "La cápsula mantiene #121318; el color no se aplica a toda la barra.\n"
+              "La cápsula oscura presenta un degradado suave y onda radial; el personaje solo aparece expandido.\n"
               "Las tres casillas notifican voz, borrador y visión por separado.\n"
               "Expandir/Colapsar cambian la geometría; visión activa tiene prioridad.\n"
               "Pasa el ratón por el notch para ver HOVER_PEEK; haz clic para EXPANDED.\n"
               "Esc colapsa solo cuando el notch expandido tiene foco; no es una hotkey global.\n"
               "Para probar auto-hide: Reposo, casillas desmarcadas, Expandir y ratón fuera.\n"
+              "Engranaje: edita auto-hide y accesos, guarda y comprueba aplicación sin reiniciar.\n"
+              "Accesos: abre una ruta real configurada; una ruta ausente debe mostrar aviso.\n"
+              "Escribe y usa Enter/Enviar: campo limpio y acuse, sin respuesta simulada.\n"
+              "Micrófono: captura real breve y medidor en vivo, sin STT/brain ni guardar audio.\n"
               "Cerrar la prueba o cerrar la ventana de control termina ambas ventanas.\n"
               "Verde de Visión y tamaños pendientes de tu validación visual; no se carga ningún modelo.", flush=True)
         notch.show()

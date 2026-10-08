@@ -548,3 +548,104 @@ widget hijo permanece visible únicamente en EXPANDED, ahora con texto debajo.
 No se amplía una región invisible permanente para capturar ratón. Este cambio
 no garantiza aún fluidez/foco/composición en pantalla real; requiere revisión
 visual humana. No se descargan ni incorporan activos externos o dependencias.
+
+## 16. Ampliación del panel y configuración local — Fase 4, 2026-10-08
+
+La decisión 17 de DECISIONS.md reemplaza las dimensiones, cápsula neutra fija
+y vistas parciales históricas de las secciones 13–15. PEEK 300×16 nominal,
+HOVER_PEEK 300×27 nominal, ancho cerrado proporcional 280–320; EXPANDED
+460×280, padding 18. Todos limitados al área QScreen actual. El personaje
+está completamente oculto y reveal_progress es 0 en ambos estados cerrados.
+Tamaño nativo, opacidad y revelado se animan en paralelo; la onda radial por
+estado tiene su propia animación que no se reinicia al cambiar geometría.
+Las propiedades Qt de pintado/animación siguen siendo detalles internos.
+CharWidget conserva sus firmas y añade solo vida/depth vectoriales propias.
+
+Ampliación aditiva del controlador puro, sin cambiar reglas ni firmas previas:
+
+```python
+NotchController.reload_settings(self) -> None
+```
+
+Obtiene los dos ajustes validados de la caché config, preserva instancia,
+geometría, EonState y flags, y reinicia el intervalo idle completo si es elegible.
+No lee archivos ni importa Qt. Guardar el diálogo lo invoca en el hilo GUI.
+Los accesores siguen sin releer el disco; solo un guardado explícito lo relee.
+
+Nuevas interfaces de config.py:
+
+```python
+get_quick_launch_shortcuts() -> list[dict[str, str]]
+save_notch_settings(*, auto_hide_enabled: bool, auto_hide_seconds: int,
+                    shortcuts: list[dict[str, str]]) -> None
+```
+
+quick_launch_shortcuts es obligatorio; [] es válido y no crea botones.
+Cada elemento contiene exactamente label/path/color, strings no vacíos y sin
+controles/espacios externos. path es absoluto; se trata como una ruta literal,
+no como línea de comandos. color debe ser #RRGGBB. Getter devuelve copia profunda.
+Save valida todo el documento con las mismas reglas de carga, preservando los
+otros campos del disco y publicando mediante temporal/fsync/os.replace. Solo
+tras publicar cambia la caché. Fallos lanzan ConfigurationError en español y
+se registran, manteniendo destino/cache previos y limpiando el temporal si es
+posible. No implementa Secrets Vault ni una interfaz para guardar secretos.
+
+Interfaz nueva de NotchWindow, siempre desde el hilo GUI:
+
+```python
+handle_user_message(self, text: str) -> None
+open_settings(self) -> None
+start_microphone_meter(self) -> None
+closed  # señal Qt sin argumentos, tras cerrar y liberar la captura
+```
+
+handle_user_message exige str (otros tipos producen ValueError), ignora vacío
+o solo espacios sin efectos, y para texto no vacío limpia text_input y muestra
+«Mensaje recibido. La conexión con el cerebro de EON se activará en una fase
+posterior.». Enter y botón Enviar llaman a esa misma función. No infiere, simula
+respuesta, registra ni almacena contenido del mensaje. Su firma queda congelada
+para reemplazar solo la implementación interna durante la integración futura.
+El campo no vacío notifica borrador activo al controlador.
+
+open_settings crea un único SettingsDialog no modal y funcional; abrirlo de
+nuevo enfoca el mismo. Auto-hide queda bloqueado mientras está abierto. Guardar
+aplica preferencias y reconstruye botones sin reiniciar ni reemplazar controlador.
+El diálogo en gui/notch_controls.py expone saved (señal sin argumentos), save(),
+add_shortcut(), remove_shortcut(), choose_file(), choose_directory(), choose_color().
+Los selectores son reales; errores mantienen el diálogo abierto con explicación.
+
+En gui/notch_controls.py:
+
+```python
+launch_shortcut(path: str) -> tuple[bool, str]
+IconButton(kind: str, label: str, parent: QWidget | None = None)
+MicrophoneLevelWorker(parent: QWidget | None = None, *, duration: float = 3.0,
+                      detector_factory: Callable[[], AcousticDetector] | None = None)
+MicrophoneLevelWorker.stop(self) -> None
+```
+
+Launcher comprueba existencia/ruta absoluta y usa Popen con argv y shell=False;
+ejecutables .exe/.com directamente, otras rutas mediante explorer.exe en Windows
+(xdg-open en otros sistemas). Captura excepciones con logging y devuelve éxito
+de lanzamiento o fallo con mensaje español; el panel muestra siempre ese mensaje.
+No verifica la aparición posterior de la ventana externa. IconButton acepta
+gear/microphone/send; otros valores producen ValueError. Dibujo original QPainter,
+tooltip/label accesible español y foco visible; ningún asset externo.
+
+El trabajador QThread emite level(float RMS normalizado 0–1), result(str español)
+y la señal finished heredada. Valida duración finita positiva sin bool. Crea
+AcousticDetector solo al ejecutar, sondea get_input_level con ventanas <=120 ms
+hasta plazo/cancelación. Un fallo del detector o RMS inválido se registra y
+finaliza con aviso, nunca se presenta como silencio exitoso. stop pide cancelación
+entre ventanas; no mata hilos ni promete controlar la latencia de PortAudio al
+abrir/cerrar. El panel permite un solo trabajador, bloquea voz durante su ejecución,
+restaura el flag previo, deshabilita el botón y consume señales en el hilo GUI.
+Cerrar solicita cancelación y difiere el cierre hasta finished; el harness espera
+closed antes de salir. No bloquea la GUI con join ni destruye un hilo activo.
+
+Alcance: medidor de nivel de voz real, transcripción y respuesta pendientes de
+fase de integración. No se invoca STT/TTS/brain ni se guarda audio. Harness ahora
+permite probar configuración, apertura real de accesos y captura opt-in; los siete
+botones de estados y tres flags siguen siendo simulación manual, no wiring real
+de esos subsistemas. Test suites de panel/controles mockean micrófono y Popen;
+offscreen no acredita escritorio, periféricos o fluidez física.

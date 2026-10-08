@@ -518,3 +518,115 @@ y esquinas inferiores redondeadas; posición QScreen, foco y flags no cambian.
 La revisión UI/UX mantiene contraste, indicador de foco neutro y transiciones
 breves; no introduce referencias visuales externas. Main y Fase 5 siguen fuera
 del alcance, hasta aprobación visual y autorización expresa de Pablo.
+
+## 17. Fase 4: notch al borde, onda radial y controles locales funcionales — 2026-10-08
+
+Por encargo explícito de Pablo, esta decisión actualiza la sección 16: el
+personaje deja de asomar en PEEK y HOVER_PEEK; en ambos queda completamente
+oculto y su progreso de revelado es exactamente 0. Solo aparece en EXPANDED.
+El color principal de estado pasa del personaje a la cápsula mediante una onda
+radial suave. Las entradas anteriores describen diseños históricos, no el actual.
+No cambia la paleta lógica; el verde de visión sigue pendiente de revisión humana.
+
+Dimensiones en píxeles lógicos: PEEK 300×16 como referencia para pantalla de
+1920 px; el ancho cerrado es clamp(round(300×ancho_pantalla/1920), 280, 320).
+HOVER_PEEK comparte ese ancho y conserva exactamente los 27 px aprobados.
+Ejemplos: 280 px en 1366, 300 en 1920, 320 en 2560. Los 16 px de PEEK hacen
+perceptible la onda sin convertir el estado cerrado en un panel de contenido.
+EXPANDED usa 460×280: los 280 px permiten cabecera, accesos y entrada sin
+comprimir el personaje. Se limita el ancho a pantalla menos 24 px y la altura
+a la pantalla; no se promete un panel plenamente utilizable en pantallas menores
+que su contenido mínimo. Posición superior central calculada con QScreen actual,
+sin separación del borde, esquinas superiores cuadradas y solo inferiores
+redondeadas, radio min(22, altura/2). No hay viewport invisible de tamaño máximo.
+
+Margen interior 18 px, separación vertical 8 px, cabecera 68 px, personaje
+100×68 a la izquierda y separación horizontal 12 px hasta la superficie de
+estado. Esa superficie tiene padding 12×8; los mensajes tienen padding 7 px.
+Los accesos van debajo, en una fila desplazable de 46 px, con botones de 36 px
+y separación 8 px; vacía, no muestra botones ni fila y no implica un error.
+Entrada inferior y botones propios de micrófono/enviar/configuración de 44 px,
+con separación 8 px y medidor RMS de 6 px. Iconos originales dibujados por
+QPainter, sin imágenes, fuentes de iconos ni activos externos.
+
+Cápsula base #121318. Centro radial con mezcla de la paleta de estado al 23 %,
+solo 3.5 % en IDLE, y bordes casi neutros. Cada cambio de EonState anima durante
+620 ms el radio normalizado y una cresta anular de alpha máximo 24, OutCubic;
+no es un fundido uniforme. Se utiliza la misma instancia de animación en las
+tres geometrías; expandir/colapsar no la reinicia ni oculta. Las superficies
+de texto tienen fondo oscuro independiente con alpha 210/255 (entrada 230/255),
+texto claro y foco visible; el color del acceso solo se usa en su borde, no
+como fondo saturado que comprometa legibilidad. La revisión UI/UX prioriza
+contraste, foco, labels y controles accesibles, manteniendo el diseño propio.
+
+El tamaño NATIVO ahora se anima, con QParallelAnimationGroup para tamaño,
+opacidad del contenido y revelado/traslación interior de 10 px. Se compararon
+280, 330 y 350 ms mediante avance y render offscreen; se eligen 330 ms para
+expandir, OutBack con overshoot 0.55, y 290 ms OutQuad para colapsar. La pequeña
+sobrepasada se asienta al tamaño final. Al entrar en un estado cerrado se
+oculta inmediatamente el personaje, aunque el tamaño exterior siga asentándose,
+para respetar la prohibición de mostrarlo en PEEK/hover. Una transición de tamaño
+interrumpida parte del tamaño actual. No se considera validada la fluidez física
+por estos renders: requiere la pantalla y aprobación de Pablo.
+
+Vida del personaje creada con técnica gráfica general propia: respiración
+IDLE de escala 1.0–1.02 en ciclo sinusoidal de 3200 ms, parpadeo aleatorio
+entre 3000 y 7000 ms (85 ms cierre, 40 ms pausa, 110 ms apertura), highlight
+blanco translúcido arriba a la izquierda, sombra interior inferior y sombra
+de contacto. Respiración/parpadeo se detienen al ocultarlo; no proceden de
+código, expresiones o animaciones específicas de personajes ajenos.
+
+Consulta externa limitada al árbol de rutas (metadatos, sin abrir sus recursos)
+y a estos DOS archivos del repositorio técnico autorizado, revisión
+3992d914625cda3003273348f463a64f67dd152d:
+
+- LICENSE, nombre real presente en esa revisión, para identificar la licencia.
+- NotchBuddy/Sources/App/IslandWindowController.swift, para técnica general
+  de anclaje superior, observación de cambios de pantalla y separación del
+  foco/entrada respecto al estado geométrico de la ventana.
+
+No se consultaron archivos dedicados a dibujar/animar personajes, catálogos
+de assets, sonidos, medios documentales o carpetas de diseño. El controlador
+externo contiene otras responsabilidades, que no se trasladan a EON; su código
+de personaje no se usa como referencia. No se copia ningún archivo, string,
+comentario, color, icono, sonido o ruta de asset. Se respetan los límites de
+consulta impuestos por Pablo independientemente del alcance de LICENSE.
+No se clonó ni guardó contenido externo dentro de EON. Panel, geometría,
+temporización y arte se reimplementan con código y valores propios en Qt.
+
+Alcance ampliado autorizado: quick_launch_shortcuts obligatorio, default [],
+objetos con exactamente label/path/color, strings no vacíos sin controles ni
+espacios externos, ruta absoluta literal sin interfaz para argumentos y color
+#RRGGBB. La existencia se comprueba al lanzar, no al guardar, permitiendo rutas
+temporalmente ausentes. Popen sin shell para ejecutables .exe/.com; otras rutas
+se entregan a explorer.exe en Windows. Fallos registrados y aviso visible en
+español, sin procesos reales en tests. No se verifica automáticamente que una
+ventana de aplicación externa haya aparecido tras aceptar el lanzamiento.
+
+QDialog real: auto-hide, lista editable, alta/baja, QFileDialog para archivo o
+carpeta y QColorDialog. Guardado validado con las mismas reglas de carga, temporal
+en la carpeta del JSON, fsync y os.replace. Conserva los demás campos y actualiza
+la caché solo tras publicar; un error mantiene archivo/caché previos. El guardado
+explícito relee el disco para conservar cambios ajenos. Se añade reload_settings()
+al controlador puro, sin cambiar ninguna firma existente ni regla de actividad:
+aplica preferencias validadas y reinicia un intervalo completo, manteniendo estado,
+geometría y flags. El diálogo bloquea auto-hide mientras está abierto. Se congelan
+estas ampliaciones y handle_user_message(text: str) -> None en CONTRACTS.md.
+
+Enviar/Enter con texto no vacío limpia el campo y muestra un acuse honesto,
+sin guardar el texto ni generar respuesta de IA. Vacío no tiene efectos.
+El borrador no vacío bloquea auto-hide. Micrófono: captura opt-in de unos 3 s
+mediante AcousticDetector.get_input_level en ventanas de hasta 120 ms, dentro
+de un QThread; señales encoladas actualizan la UI, sin bloquearla. La barra
+visual usa sqrt(RMS) para hacer visible señal tenue y expone RMS sin transformar
+en su descripción accesible. last_error diferencia silencio de fallo. Se evita
+duplicar capturas, se bloquea auto-hide durante la medición y se restaura la
+actividad previa al terminar. Cancelación entre ventanas; abrir el dispositivo
+puede añadir latencia. Cerrar el harness difiere el cierre hasta liberar el hilo,
+sin destruir un QThread activo ni bloquear la UI esperando al micrófono.
+
+Alcance consciente: medidor de nivel de voz real, transcripción y respuesta
+pendientes de fase de integración. No se conecta Whisper/Piper/brain, no se
+almacena audio, no se carga ningún modelo ni se inicia Fase 5. Tests usan
+captura y procesos simulados; la prueba real opt-in queda para Pablo en el
+harness. Main no se modifica y el commit/push se limita a la rama existente.

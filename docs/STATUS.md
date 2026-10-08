@@ -690,3 +690,105 @@ Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
 Pablo debe revisar los siete estados, transiciones, hover/clic y actividad antes
 de aprobar. Se autoriza commit y push solo de la rama existente, sin crear otra
 ni borrarla. Main permanece intacta, no se hace merge y Fase 5 no se inicia.
+
+## Fase 4: onda radial y panel con controles locales — 2026-10-08
+
+Pablo amplió explícitamente el alcance sobre feature/fase-4-notch-gui, partiendo
+de a35b0c9 y sin crear otra rama. Se releen AGENTS.md, STATUS.md, CONTRACTS.md
+y los tres módulos GUI antes de escribir código. Main local y remoto permanecen
+en ee8b3830b5f912fd0fdbaa3bb7cc5d5bfce4f162, sin merge ni push directo.
+La decisión 17 de DECISIONS.md actualiza las rondas anteriores sin reescribirlas;
+CONTRACTS.md, sección 16, congela las nuevas interfaces y su alcance.
+
+La cápsula se funde con el borde superior, con esquinas superiores cuadradas,
+inferiores redondeadas y posición dinámica QScreen. PEEK pasa a 16 px de alto;
+hover conserva 27 px. Ancho cerrado proporcional 280–320 px (300 en 1920).
+EXPANDED 460×280 con 18 px de margen, personaje izquierdo, texto de estado,
+engranaje original, fila de accesos, mensajes y entrada inferior. Personaje
+completamente oculto en PEEK/hover; revelado exactamente 0 en ambos estados.
+
+EonState se comunica ahora principalmente mediante degradado radial suave
+(23 % de mezcla, IDLE 3.5 %) y frente de onda de 620 ms. La misma animación
+permanece independiente de los tres estados geométricos. Los bloques de texto
+tienen superficies oscuras semitransparentes propias. Se anima tamaño NATIVO,
+opacidad y revelado en QParallelAnimationGroup: expansión 330 ms OutBack,
+colapso 290 ms OutQuad, con continuación desde el tamaño interrumpido. Se
+compararon 280/330/350 ms offscreen; eso no acredita fluidez física en Windows.
+El personaje incorpora respiración idle 1–1.02, parpadeo aleatorio 3–7 s,
+highlight y sombras de volumen/contacto originales, detenidos al ocultarse.
+
+Se consultaron solo metadatos de rutas y dos archivos técnicos externos
+autorizados: LICENSE y NotchBuddy/Sources/App/IslandWindowController.swift,
+revisión 3992d914625cda3003273348f463a64f67dd152d. La lista y límites están
+en DECISIONS.md. No se abrió ningún archivo dedicado al render/animación de
+personajes ni assets, sonidos, medios o diseño. No se incorporó ni copió contenido
+externo en EON; el diseño y código Qt son propios. No se instala nada.
+
+Implementación funcional adicional:
+
+- config.py valida quick_launch_shortcuts (default []), devuelve copia profunda
+  y guarda preferencias mediante validación compartida y publicación atómica.
+  user_settings.json solo añade la lista vacía; modelos, voz y demás valores
+  seleccionados por Pablo no cambian.
+- gui/notch_controls.py tiene su suite propia: iconos QPainter, QDialog real
+  para editar auto-hide/accesos, selectores de archivo/carpeta/color, apertura
+  real con Popen sin shell y trabajador de medición RMS. Errores con logging
+  y mensajes españoles, sin fallos silenciosos ni procesos reales en tests.
+- NotchController añade únicamente reload_settings(): conserva las interfaces
+  previas, reglas, flags y estado, y reinicia un intervalo completo al aplicar
+  preferencias. Diálogo y botones se actualizan sin reiniciar el proceso.
+- Campo Qt real, Enter/Enviar con handle_user_message(text: str) -> None:
+  vacío no hace nada; no vacío limpia el campo y muestra un acuse honesto.
+  No se almacena texto, no se infiere ni se simula una respuesta de IA. El
+  borrador bloquea auto-hide; tabulación sigue el orden visual de controles.
+- Micrófono opt-in de unos 3 s: get_input_level en QThread, barra de RMS en vivo,
+  distinción de silencio/error, una sola captura y bloqueo temporal de auto-hide.
+  El cierre solicita cancelación y espera finished de forma no bloqueante antes
+  de salir, sin destruir un hilo activo. No se almacena grabación.
+
+Alcance consciente: medidor de nivel de voz real, transcripción y respuesta
+pendientes de fase de integración. La ruta de captura está implementada, pero
+en ESTA ronda no se ha pulsado el micrófono físico: su validación humana está
+pendiente. No se invocan STT/TTS/brain, no se cargan modelos ni se inicia Fase 5.
+
+Verificación final sin hardware: pytest completo, QT_QPA_PLATFORM=offscreen,
+EON_RUN_VOICE_INTEGRATION=0 y EON_RUN_OLLAMA_INTEGRATION=0:
+366 passed, 2 skipped in 3.32s, sin fallos. Informe local ignorado:
+.runtime/fase4_panel_mocked.xml. Los dos omitidos son las integraciones reales
+de Ollama y voz. Se mantienen los tests puros de actividad/visión/auto-hide;
+los tests Qt anteriores se actualizan únicamente para el nuevo diseño/timing.
+59 casos adicionales cubren configuración válida/inválida, publicación fallida,
+diálogo real, lanzadores simulados, texto, señales RMS, errores, cancelación,
+cierre con hilo activo, tamaños intermedios, onda independiente, vida, márgenes
+y foco/tabulación. La búsqueda de marcadores TODO/placeholder/stub en Python
+fuera de tests no encuentra ninguno; los nombres externos prohibidos tampoco
+aparecen en archivos del proyecto. Ollama muestra solo cabecera, sin modelos.
+
+Renders offscreen propios revisados en .runtime/fase4_panel_shortcuts_preview.png,
+.runtime/fase4_panel_peek_preview.png, .runtime/fase4_panel_hover_preview.png
+y .runtime/fase4_panel_settings_preview.png;
+se corrigieron un fondo claro involuntario y la compresión de cabecera con accesos.
+La fuente Segoe UI se cargó solo para el diagnóstico offscreen, no en producción
+ni como asset. No se abrieron aplicaciones externas reales ni se guardaron ajustes
+personales como parte de las pruebas; los tests usan archivos temporales separados.
+También se ejecutó el bucle Qt del harness offscreen y se comprobó que cerrar
+su ventana de controles termina el notch y retorna código 0, sin captura real.
+
+Para la revisión real desde PowerShell:
+
+```powershell
+Set-Location C:\Dev\Eon
+Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+& .\.venv\Scripts\python.exe .\scripts\fase4_notch_harness.py
+```
+
+Probar los siete estados y la onda mientras se alterna reposo/hover/expandido;
+auto-hide y visión conservan sus prioridades. En el engranaje, añadir una ruta
+real, elegir color, guardar y comprobar la actualización sin reinicio; un acceso
+ausente debe mostrar aviso. Escribir y enviar/Enter verifica acuse y limpieza.
+Micrófono activa captura REAL y medidor, sin transcribir. Cerrar durante la
+medición debe terminar tras liberar el dispositivo. El guardado modifica realmente
+user_settings.json; esos ajustes personales pueden ensuciar el árbol de trabajo.
+Offscreen no valida composición, foco de escritorio ni varios monitores físicos.
+Solo se autoriza un commit nuevo y push de esta rama, que se conserva; Pablo
+debe verlo en pantalla y confirmar antes de cualquier merge o Fase 5.

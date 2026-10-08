@@ -1,6 +1,7 @@
 {
   "notch_auto_hide_enabled": true,
   "notch_auto_hide_seconds": 15,
+  "quick_launch_shortcuts": [],
   "voice_profile": "es_ES-sharvard-medium",
   "voice_settings": {
     "stt_model": "base",

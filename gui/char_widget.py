@@ -5,10 +5,11 @@ icons or sprites. This is complete vector drawing and animated state logic.
 """
 
 import math
+import random
 from types import MappingProxyType
 
-from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, Qt, pyqtProperty
-from PyQt6.QtGui import QColor, QLinearGradient, QPaintEvent, QPainter, QPainterPath, QPen, QRadialGradient
+from PyQt6.QtCore import QEasingCurve, QPauseAnimation, QPropertyAnimation, QRectF, QSequentialAnimationGroup, Qt, QTimer, pyqtProperty
+from PyQt6.QtGui import QColor, QHideEvent, QLinearGradient, QPaintEvent, QPainter, QPainterPath, QPen, QRadialGradient, QShowEvent
 from PyQt6.QtWidgets import QWidget
 
 from core.eon_state import EonState, STATE_LABELS, state_color
@@ -57,6 +58,8 @@ class CharWidget(QWidget):
         self._detail_progress = 1.0
         self._weights = {self._state: 1.0}
         self._source_weights = dict(self._weights)
+        self._breath_phase = 0.0
+        self._blink = 0.0
         self.setMinimumSize(48, 48)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -68,6 +71,65 @@ class CharWidget(QWidget):
         self._detail_animation = QPropertyAnimation(self, b"detail_progress", self)
         self._detail_animation.setDuration(COLOR_TRANSITION_MS)
         self._detail_animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._breath_animation = QPropertyAnimation(self, b"breath_phase", self)
+        self._breath_animation.setDuration(3200)
+        self._breath_animation.setStartValue(0.0)
+        self._breath_animation.setEndValue(math.tau)
+        self._breath_animation.setLoopCount(-1)
+        self._blink_animation = QSequentialAnimationGroup(self)
+        for start, end, duration in ((0.0, 1.0, 85), (1.0, 0.0, 110)):
+            animation = QPropertyAnimation(self, b"blink_progress")
+            animation.setStartValue(start)
+            animation.setEndValue(end)
+            animation.setDuration(duration)
+            animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+            self._blink_animation.addAnimation(animation)
+            if end == 1.0:
+                self._blink_animation.addAnimation(QPauseAnimation(40))
+        self._blink_timer = QTimer(self)
+        self._blink_timer.setSingleShot(True)
+        self._blink_timer.timeout.connect(self._start_blink)
+        self._blink_animation.finished.connect(self._schedule_blink)
+
+    def _get_breath_phase(self) -> float:
+        return self._breath_phase
+
+    def _set_breath_phase(self, phase: float) -> None:
+        self._breath_phase = phase
+        self._repaint_artwork()
+
+    breath_phase = pyqtProperty(float, fget=_get_breath_phase, fset=_set_breath_phase)
+
+    def _get_blink_progress(self) -> float:
+        return self._blink
+
+    def _set_blink_progress(self, progress: float) -> None:
+        self._blink = progress
+        self._repaint_artwork()
+
+    blink_progress = pyqtProperty(float, fget=_get_blink_progress, fset=_set_blink_progress)
+
+    def _schedule_blink(self) -> None:
+        if self.isVisible():
+            self._blink_timer.start(random.randint(3000, 7000))
+
+    def _start_blink(self) -> None:
+        if self.isVisible():
+            self._blink_animation.start()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        if self._state == EonState.IDLE:
+            self._breath_animation.start()
+        self._schedule_blink()
+        super().showEvent(event)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        self._breath_animation.stop()
+        self._blink_timer.stop()
+        self._blink_animation.stop()
+        self._set_breath_phase(0.0)
+        self._set_blink_progress(0.0)
+        super().hideEvent(event)
 
     def _repaint_artwork(self) -> None:
         """Update this widget and any parent-painted partial preview together."""
@@ -107,6 +169,10 @@ class CharWidget(QWidget):
         self._detail_animation.stop()
         self._source_weights = dict(self._weights)
         self._state = state
+        self._breath_animation.stop()
+        self._set_breath_phase(0.0)
+        if state == EonState.IDLE and self.isVisible():
+            self._breath_animation.start()
         self.setAccessibleDescription(STATE_LABELS[state])
         self._animation.stop()
         self._animation.setStartValue(QColor(self._color))
@@ -181,17 +247,20 @@ class CharWidget(QWidget):
         painter.setPen(QPen(QColor("#27232a"), 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.setBrush(QColor("#27232a"))
         for x in (37, 59):
-            if state == EonState.IDLE:
+            if self._blink > 0.85:
+                painter.drawLine(x - 3, 32, x + 3, 32)
+            elif state == EonState.IDLE:
                 eye = QPainterPath()
-                eye.moveTo(x - 3, 32)
-                eye.quadTo(x, 35, x + 3, 32)
+                eye.moveTo(x - 3, 31)
+                eye.quadTo(x, 29 + 2 * self._blink, x + 3, 31)
                 painter.drawPath(eye)
             elif state == EonState.ERROR:
                 painter.drawLine(x - 3, 29, x + 2, 34)
             elif state == EonState.BUILDING:
                 painter.drawLine(x - 3, 31, x + 3, 31)
             else:
-                tall = 7 if state in (EonState.LISTENING, EonState.VISION_ACTIVE) else 5
+                tall = (7 if state in (EonState.LISTENING, EonState.VISION_ACTIVE) else 5) * (1 - self._blink)
+                tall = max(0.8, tall)
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawRoundedRect(QRectF(x - 2, 30 - tall / 2, 4, tall), 2, 2)
         if state == EonState.SPEAKING:
@@ -204,7 +273,17 @@ class CharWidget(QWidget):
         scale = min(bounds.width() / 100, bounds.height() / 68)
         painter.translate(bounds.center().x() - 50 * scale, bounds.center().y() - 34 * scale)
         painter.scale(scale, scale)
+        breath_scale = 1.0 + 0.01 * (1 - math.cos(self._breath_phase))
+        painter.translate(50, 54)
+        painter.scale(breath_scale, breath_scale)
+        painter.translate(-50, -54)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        contact = QRadialGradient(49, 56, 37)
+        contact.setColorAt(0, QColor(0, 0, 0, 110))
+        contact.setColorAt(1, QColor(0, 0, 0, 0))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(contact)
+        painter.drawEllipse(QRectF(10, 50, 78, 12))
         glow = QRadialGradient(50, 33, 51)
         glow_color = QColor(self._color)
         glow_color.setAlpha(100)
@@ -222,6 +301,16 @@ class CharWidget(QWidget):
         painter.setBrush(gradient)
         painter.setPen(QPen(QColor(255, 246, 228, 150), 1.0))
         painter.drawPath(body)
+        painter.save()
+        painter.setClipPath(body)
+        shade = QLinearGradient(0, 36, 0, 55)
+        shade.setColorAt(0, QColor(0, 0, 0, 0))
+        shade.setColorAt(1, QColor(20, 14, 26, 65))
+        painter.fillRect(QRectF(11, 36, 76, 19), shade)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 255, 255, 75))
+        painter.drawEllipse(QRectF(20, 15, 20, 5))
+        painter.restore()
         for state, weight in self._weights.items():
             if weight <= 0:
                 continue
