@@ -456,3 +456,65 @@ Offscreen no acredita foco real, ausencia de icono en taskbar, composición del
 escritorio ni comportamiento con pantallas físicas; Pablo debe probar el harness
 antes de autorizar merge. No hay wiring real de voz/visión, hotkey global ni arte
 final; tampoco se modifica safety, Genesis o model_router.
+
+## 16. Fase 4: identidad original, cápsula neutra y revelado interior — 2026-10-08
+
+Por solicitud explícita de Pablo se sustituye el criterio visual inicial de
+comunicar el estado coloreando toda la barra, incluso en PEEK, por una cápsula
+SIEMPRE oscura/neutra #121318. El personaje comunica EonState mediante degradado,
+resplandor, expresión mínima e insignia; el texto sigue comunicándolo en español
+cuando el panel está expandido. Esta decisión posterior actualiza el render
+de la sección 15 sin reescribir el registro anterior ni cambiar la paleta lógica.
+
+La familia «blob suave redondeado tipo squircle, con rostro minimalista, viviendo
+en un notch flotante» se adopta como lenguaje visual genérico compartido por
+múltiples productos de la categoría de asistentes de escritorio en notch.
+EON adopta deliberadamente proporciones, paleta, insignias y animaciones propias
+y distinguibles, sin referenciar ni reproducir el diseño específico de ningún
+producto concreto. No se consultan imágenes, GIFs, iconos, personajes, sonidos
+o repositorios visuales de terceros. No se afirma una comparación exhaustiva
+con todos los diseños existentes; el origen del dibujo es la descripción textual
+original del encargo y las primitivas geométricas implementadas para EON.
+La prohibición permanente de usar activos visuales reservados se añade a AGENTS.md.
+
+Propuesta de personaje: cuerpo de superelipse exponente 4.5, proporción 76:44,
+base cálida #e9d3b8 mezclada con el color activo, dos ojos discretos y glow radial
+coloreado. La insignia vive en la esquina inferior derecha. Tabla propia:
+
+| Estado | Forma y marca vectorial | Tinte |
+| --- | --- | --- |
+| IDLE | Círculo con guion corto | #8ea9c7 |
+| LISTENING | Disco con tres barras de distinta altura | #00e5ff |
+| THINKING | Rombo con tres puntos | #a742ff |
+| SPEAKING | Círculo con dos ondas curvas | #ff3de0 |
+| BUILDING | Cuadrado redondeado con tres bloques escalonados | #ff9f1c |
+| ERROR | Hexágono con dos trazos cruzados | #ff3b3b |
+| VISION_ACTIVE | Cápsula con cuatro marcas de encuadre | #39ff88, provisional |
+
+Estas propuestas se mostraron en el chat antes de implementarlas y siguen
+pendientes de aprobación visual humana. El verde de visión también conserva
+su carácter provisional. Cuerpo/glow interpolan QColor durante 220 ms;
+insignias y expresiones hacen disolución cruzada en el mismo intervalo.
+Si una transición se interrumpe, se retoma el color y mezcla visibles actuales.
+No se usan imágenes, fuentes de iconos ni dependencias adicionales.
+
+Mecanismo elegido: viewport fijo en cada geometría y recorte/traslación interior
+animados, mediante QPropertyAnimation, QPainterPath y máscara del widget hijo.
+Se conservan exactamente 220×5, 220×27 y 220×90 píxeles lógicos, el controlador
+y todos los tests anteriores sin cambios. La dimensión nativa cambia de forma
+inmediata al tamaño solicitado; la animación de 220 ms afecta al recorte del
+contenido, posición interior, contorno visible de cápsula y aparición del texto,
+no al tamaño nativo completo. No se usa una ventana permanentemente de 220×90
+que intercepte ratón sobre una zona invisible cuando está en PEEK. Esta elección
+limita el trabajo a pintado/Qt, conserva los hitboxes existentes y evita recrear
+la ventana para cada frame. Su fluidez real queda pendiente de la prueba de Pablo.
+
+En PEEK asoma solo la cresta del cuerpo bajo el borde de la cápsula; HOVER_PEEK
+muestra una porción intermedia y EXPANDED el personaje completo con texto debajo.
+El widget hijo sigue visible solo expandido; las vistas parciales se pintan con
+el mismo renderer vectorial en el padre, sin duplicar el diseño o alterar el
+contrato de NotchController. La cápsula usa QPainterPath con parte superior recta
+y esquinas inferiores redondeadas; posición QScreen, foco y flags no cambian.
+La revisión UI/UX mantiene contraste, indicador de foco neutro y transiciones
+breves; no introduce referencias visuales externas. Main y Fase 5 siguen fuera
+del alcance, hasta aprobación visual y autorización expresa de Pablo.

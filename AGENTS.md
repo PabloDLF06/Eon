@@ -26,3 +26,9 @@ Estas reglas se aplican a todas las fases futuras del proyecto.
 - Antes de escribir código nuevo en cualquier sesión futura, leer primero
   `docs/STATUS.md` y `docs/CONTRACTS.md`.
 - Actualizar `docs/STATUS.md` al final de cada sesión de trabajo.
+- Ningún agente de este proyecto debe ingerir, visualizar como
+  referencia de diseño, ni intentar reproducir activos visuales (personajes,
+  iconos, animaciones, sonidos) de productos de terceros con derechos de
+  autor reservados, aunque se cambie el nombre del resultado. El diseño
+  visual de EON se construye a partir de descripciones textuales originales
+  y debe mantener una identidad visual propia y distinguible.

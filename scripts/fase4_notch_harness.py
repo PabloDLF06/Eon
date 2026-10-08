@@ -27,7 +27,8 @@ class ControlWindow(QWidget):
         self.setMinimumWidth(430)
         layout = QVBoxLayout(self)
         instructions = QLabel("El notch está arriba, en el centro de la pantalla principal.\n"
-                              "Pasa el ratón para anticipar; haz clic para expandir.\n"
+                              "La cápsula es oscura; el personaje comunica el estado.\n"
+                              "En reposo asoma, con hover se revela y con clic aparece completo.\n"
                               "Reposo sin actividad: se oculta tras el tiempo configurado.\n"
                               "Visión marcada fuerza expansión e impide colapsar.\n"
                               "Los botones solo simulan estados; no activan voz ni IA.")
@@ -99,7 +100,8 @@ def main() -> int:
         notch.controller.expand()
         notch.refresh()
         controls = ControlWindow(notch)
-        print("Prueba manual de Eon: los siete botones cambian el estado lógico y su color.\n"
+        print("Prueba manual de Eon: los siete botones cambian el estado, rostro, tinte e insignia del personaje.\n"
+              "La cápsula mantiene #121318; el color no se aplica a toda la barra.\n"
               "Las tres casillas notifican voz, borrador y visión por separado.\n"
               "Expandir/Colapsar cambian la geometría; visión activa tiene prioridad.\n"
               "Pasa el ratón por el notch para ver HOVER_PEEK; haz clic para EXPANDED.\n"

@@ -629,3 +629,64 @@ hover/clic, foco, ausencia de icono del notch en taskbar y auto-hide. Offscreen
 no sustituye esa validación ni comprueba composición o varios monitores reales.
 El commit y push están autorizados solo para feature/fase-4-notch-gui; la rama
 se conserva y el merge queda bloqueado hasta confirmación visual explícita.
+
+## Fase 4: personaje original squircle y cápsula oscura — 2026-10-08
+
+Por encargo de Pablo se rediseñan únicamente el pintado Qt y el personaje en
+feature/fase-4-notch-gui, partiendo del commit 0f000bc. Se revisaron los tres
+módulos GUI anteriores y se leyeron completos STATUS.md, CONTRACTS.md y AGENTS.md.
+Se añade a AGENTS.md la regla permanente de no ingerir/reproducir activos visuales
+reservados de terceros. No se consultó, incluyó ni replicó ningún activo visual
+de terceros; todo el dibujo procede de la descripción textual original y de
+primitivas matemáticas propias en QPainter. No se añade ninguna dependencia.
+
+El diseño adopta el lenguaje genérico de un blob suave en notch, con identidad
+propia de EON: cuerpo de superelipse 76:44/exponente 4.5, degradado cálido
+#e9d3b8 y color de estado, rostro mínimo, glow y siete insignias vectoriales
+distintas. La cápsula permanece #121318, sin colorear toda la barra; solo
+personaje/glow/insignia comunican el color activo. La propuesta por estado está
+en DECISIONS.md, sección 16, y se mostró en el chat antes de implementarse.
+El color verde de VISION_ACTIVE y el acabado siguen pendientes de validación
+visual humana; no se afirma una comparación exhaustiva con productos existentes.
+
+Revelado: viewport fijo por geometría, manteniendo 220×5/27/90 y animando durante
+220 ms recorte, traslación interior, contorno visible y opacidad del texto.
+La dimensión nativa cambia inmediatamente; no se anima el tamaño exterior entero.
+PEEK muestra una cresta, HOVER_PEEK una porción intermedia y EXPANDED el cuerpo
+completo con texto debajo. No hay ventana invisible de tamaño máximo interceptando
+ratón en PEEK. Color, rostro e insignia hacen transiciones suaves y mantienen
+su mezcla visible si una transición se interrumpe.
+
+gui/notch_window.py y sus reglas/interfaces permanecen exactamente intactos.
+Tampoco cambian la paleta lógica, config.py, user_settings.json ni los 295 tests
+existentes; se mantienen foco y posición dinámica QScreen. CharWidget conserva
+sus firmas públicas; CONTRACTS.md añade solo la actualización visual posterior.
+El harness conserva siete botones, tres casillas y expansión/colapso, con las
+instrucciones actualizadas para el nuevo render. No se conecta a voz/visión real.
+
+Verificación: pytest completo con QT_QPA_PLATFORM=offscreen e integraciones reales
+desactivadas terminó con 307 aprobados y 2 omitidos en 3.36 s. Incluye los 295
+anteriores y 12 nuevos de render: cápsula neutra en cada estado, insignias
+distintas, disolución/revelado interrumpidos, cresta visible y controles del
+harness operativos. Se comprobó con git diff la ausencia de cambios en el
+controlador y tests anteriores. La búsqueda de marcadores de código incompleto
+en core/gui/scripts Python no encontró ninguno; Ollama sigue vacío.
+
+Se revisaron renders offscreen de las siete variantes y las tres geometrías,
+generados únicamente desde el código de EON. Informe y previews locales:
+.runtime/fase4_squircle_mocked.xml, .runtime/fase4_squircle_states.png y
+.runtime/fase4_squircle_peek/hover/expanded.png. No se versionan. La fuente de
+sistema se cargó solo para el diagnóstico offscreen, no como activo del proyecto.
+Estos renders no acreditan fluidez, foco o composición en el escritorio real.
+
+Para probar en pantalla real, desde PowerShell:
+
+```powershell
+Set-Location C:\Dev\Eon
+Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+& .\.venv\Scripts\python.exe .\scripts\fase4_notch_harness.py
+```
+
+Pablo debe revisar los siete estados, transiciones, hover/clic y actividad antes
+de aprobar. Se autoriza commit y push solo de la rama existente, sin crear otra
+ni borrarla. Main permanece intacta, no se hace merge y Fase 5 no se inicia.

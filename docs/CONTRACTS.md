@@ -525,3 +525,26 @@ scripts/fase4_notch_harness.py es una herramienta manual, no un test de suite.
 Abre el notch inicialmente expandido y una ventana de controles con siete
 estados, tres flags, expandir/colapsar y cerrar. No importa módulos de voz/visión
 ni carga modelos, no captura micrófono/pantalla y no registra hotkeys globales.
+
+## 15. Actualización exclusivamente visual de Fase 4 — 2026-10-08
+
+La decisión 16 de DECISIONS.md actualiza el acabado descrito en los apartados
+13–14, sin cambiar ninguna firma, regla ni garantía del NotchController. Los
+estados, auto-hide, reloj, notificaciones, foco y dimensiones externas se conservan.
+CharWidget(parent: QWidget | None = None) y set_eon_state(state: EonState) -> None
+mantienen sus firmas y validación; no se añade un método público para los consumidores.
+
+El ojo inicial se sustituye por un cuerpo vectorial ancho de superelipse, rostro
+mínimo, degradado cálido/estado, glow y siete insignias geométricas originales.
+Color y expresión/insignia se interpolan o disuelven durante 220 ms, retomando la
+mezcla actual si se interrumpe una transición. Los controles Qt de animación son
+detalles internos de pintado, no parte de la API de voz/visión.
+
+La cápsula es siempre #121318. EonState colorea solo el personaje/glow/insignia;
+los labels y el borde de foco son neutros. La ventana conserva 220×5/27/90 por
+geometría, con tamaño nativo inmediato y recorte/traslación interiores animados.
+PEEK/HOVER_PEEK pintan vistas parciales del mismo personaje en el padre; el
+widget hijo permanece visible únicamente en EXPANDED, ahora con texto debajo.
+No se amplía una región invisible permanente para capturar ratón. Este cambio
+no garantiza aún fluidez/foco/composición en pantalla real; requiere revisión
+visual humana. No se descargan ni incorporan activos externos o dependencias.
