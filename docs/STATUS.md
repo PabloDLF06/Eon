@@ -554,3 +554,78 @@ del merge coincidió exactamente con el de la rama de fase. Se eliminó
 feature/fase-3-voice-engine local y remotamente tras verificar la publicación.
 Las entradas anteriores se conservan como registro histórico de cada sesión.
 Fase 4 no se inicia; queda pendiente de nueva confirmación explícita de Pablo.
+
+## Fase 4: base del notch implementada, pendiente de validación visual — 2026-10-08
+
+Pablo autorizó esta fase en local, partiendo de main limpio en
+ee8b3830b5f912fd0fdbaa3bb7cc5d5bfce4f162, con el merge de Fase 3 y los tres
+tags fase-1/2/3-completa comprobados. Se leyeron completos STATUS.md,
+CONTRACTS.md y AGENTS.md antes de escribir código. Ollama estaba vacío.
+Se creó feature/fase-4-notch-gui; main no se modifica ni se hace merge.
+
+Verificación previa a instalar: PyPI ofrece el wheel
+pyqt6-6.11.0-cp310-abi3-win_amd64.whl, compatible con las etiquetas del
+Python 3.14.8 de 64 bits local. El dry-run solo binario resolvió las transitivas
+sin compilar. Se instaló PyQt6 6.11.0 (pin existente), PyQt6-Qt6 6.11.2 y
+PyQt6-sip 13.13.0 mediante --only-binary=:all:, con import real y pip check
+correctos. No se cambian requirements.txt, config.py ni user_settings.json.
+
+Implementación de esta base:
+
+- core/eon_state.py: siete estados, colores y labels españoles de solo lectura,
+  sin importar Qt. El verde #39ff88 de VISION_ACTIVE es provisional, pendiente
+  de confirmación visual de Pablo; los otros hex son los del encargo explícito.
+- gui/notch_window.py: NotchGeometryState y NotchController puros, reloj
+  inyectable, tick y flags independientes. Auto-hide cuenta N segundos continuos
+  en IDLE sin actividad ni ratón encima; al terminar un bloqueo se reinicia el
+  intervalo completo. Visión activa fuerza EXPANDED y bloquea cualquier colapso.
+- gui/notch_qt.py: adaptador NotchWindow importado perezosamente, QTimer de
+  200 ms, ventana frameless/Tool/always-on-top/translúcida, foco deshabilitado
+  en PEEK/HOVER_PEEK y permitido en EXPANDED. Posición superior central mediante
+  QScreen actual, con eventos de pantalla y ratón protegidos por logging.
+- Dimensiones iniciales 220×5, 220×27 y 220×90 píxeles lógicos, ajustables tras
+  revisión visual. Son constantes de fase, no ajustes nuevos del JSON.
+- gui/char_widget.py: ojo vectorial funcional y animación real de color de
+  220 ms. Solo el contenido artístico es temporal; no hay lógica incompleta.
+- scripts/fase4_notch_harness.py: notch inicialmente expandido y controles de
+  los siete estados, tres flags, expansión/colapso y cierre. Imprime instrucciones
+  en español. Esc es colapso local con foco, no hotkey global.
+
+CONTRACTS.md, secciones 12–14, congela las interfaces y garantías; DECISIONS.md,
+sección 15, registra wheel, arquitectura, propuestas visuales y límites.
+No se conecta todavía el notch a voz/visión reales, no se implementan hotkeys
+globales ni arte final del personaje, ni se modifican voz, visión, safety,
+Genesis o model_router. Fase 5 no se inicia.
+
+Verificación automática y diagnóstico sin escritorio real:
+
+- pytest completo con QT_QPA_PLATFORM=offscreen y ambas integraciones reales
+  desactivadas: 295 aprobados, 2 omitidos en 9.73 s. Se conservan los 245 casos
+  previos y se añaden 50 de Fase 4. Informe .runtime/fase4_mocked.xml.
+- Cada módulo nuevo en core/gui tiene tests. Los del controlador se ejecutan
+  sin QApplication; una prueba separada prohíbe cualquier import PyQt6 y aun así
+  importa y ejecuta el controlador. Qt se verifica sin instalar pytest-qt.
+- Comprobaciones offscreen de instanciación, flags, dimensiones, visibilidad,
+  animación, limpieza del timer y fallo de pantalla controlado. Se ejercitaron
+  los siete botones de estado, tres casillas y expansión/colapso del harness.
+- Revisión del render offscreen en .runtime/fase4_notch_preview.png: personaje
+  y textos visibles al cargar Segoe UI solo para ese diagnóstico, pues este
+  backend enumera cero fuentes. No se modificó la tipografía del proyecto.
+- Búsqueda TODO/placeholder/stub en core/gui: solo aparece el docstring
+  artístico permitido de char_widget.py; ninguna lógica incompleta.
+- Ollama continúa vacío. No se cargan modelos ni se repite integración real de
+  voz/Ollama; informes y preview de .runtime no se versionan.
+
+Para la prueba humana, desde PowerShell:
+
+```powershell
+Set-Location C:\Dev\Eon
+Remove-Item Env:QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+& .\.venv\Scripts\python.exe .\scripts\fase4_notch_harness.py
+```
+
+Pablo debe validar en su pantalla real tamaños, contraste, color de visión,
+hover/clic, foco, ausencia de icono del notch en taskbar y auto-hide. Offscreen
+no sustituye esa validación ni comprueba composición o varios monitores reales.
+El commit y push están autorizados solo para feature/fase-4-notch-gui; la rama
+se conserva y el merge queda bloqueado hasta confirmación visual explícita.

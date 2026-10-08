@@ -1,4 +1,4 @@
-# EON — Contratos congelados de Fases 1 y 3
+# EON — Contratos congelados de Fases 1, 3 y 4
 
 Fecha: 2026-10-07. Implementación: `config.py`, `core/model_router.py`,
 `core/acoustic_detector.py`, `core/voice_engine.py` y `core/barge_in.py`.
@@ -394,3 +394,134 @@ no carga modelos de Ollama. Libera STT/TTS en `finally` y deja la evidencia en
 tras corregir el decodificador; la evidencia original fallida se conserva en
 `.runtime/fase3_voice_integration.json`. El WAV de muestra queda en
 `.runtime/fase3_tts_sample.wav` para escucha humana, sin reproducirse solo.
+
+## 12. EonState y paleta — Fase 4, 2026-10-08
+
+En core/eon_state.py, sin importar PyQt6:
+
+```python
+class EonState(Enum):
+    IDLE = "idle"
+    LISTENING = "listening"
+    THINKING = "thinking"
+    SPEAKING = "speaking"
+    BUILDING = "building"
+    ERROR = "error"
+    VISION_ACTIVE = "vision_active"
+
+state_color(state: EonState) -> str
+```
+
+STATE_COLORS y STATE_LABELS son mapas de solo lectura, completos para los siete
+estados. state_color rechaza valores ajenos a EonState con ValueError. Colores:
+IDLE #8ea9c7, LISTENING #00e5ff, THINKING #a742ff, SPEAKING #ff3de0,
+BUILDING #ff9f1c, ERROR #ff3b3b y VISION_ACTIVE #39ff88. El último es una
+propuesta provisional pendiente de confirmación visual de Pablo. Los labels
+están en español; el estado no se comunica únicamente por color.
+
+## 13. NotchController y adaptador Qt — Fase 4, 2026-10-08
+
+gui/notch_window.py expone la lógica pura sin importar PyQt6 ni requerir
+QApplication. Solo solicitar NotchWindow importa perezosamente el adaptador
+QWidget de gui/notch_qt.py. Importar EonState o NotchController funciona incluso
+si PyQt6 no está disponible.
+
+```python
+class NotchGeometryState(Enum):
+    PEEK = "peek"
+    HOVER_PEEK = "hover_peek"
+    EXPANDED = "expanded"
+
+NotchController(clock: Callable[[], float] = time.monotonic)
+set_eon_state(self, state: EonState) -> None
+notify_voice_activity(self, active: bool) -> None
+notify_draft_activity(self, active: bool) -> None
+notify_vision_active(self, active: bool) -> None
+on_mouse_enter(self) -> None
+on_mouse_leave(self) -> None
+on_click(self) -> None
+expand(self) -> None
+collapse(self) -> None
+tick(self) -> None
+```
+
+Propiedades de solo lectura: eon_state: EonState, geometry_state:
+NotchGeometryState, voice_active: bool, draft_active: bool y vision_active: bool.
+Estado inicial: IDLE, PEEK, tres flags False y ratón fuera. El constructor toma
+una copia de config.get_notch_settings(); no añade ajustes al JSON ni implementa
+recarga dinámica. El reloj debe ser invocable, finito y monótono; un reloj inválido
+produce ValueError. Las notificaciones exigen bool real y set_eon_state exige
+EonState; errores de uso producen ValueError antes de cambiar su estado.
+
+- on_mouse_enter lleva PEEK a HOVER_PEEK; no colapsa EXPANDED.
+- on_mouse_leave lleva una vista previa sin clic a PEEK; un panel expandido
+  sigue expandido y comienza un nuevo intervalo si es elegible.
+- on_click y expand fuerzan EXPANDED sin cambiar actividad lógica.
+- collapse fuerza PEEK, salvo mientras vision_active sea True.
+- notify_vision_active(True) fuerza EXPANDED inmediatamente y tick mantiene
+  esa prioridad sobre colapso, hover y auto-hide, incluso con auto-hide desactivado.
+- Voz y borrador solo bloquean auto-hide; no fuerzan expansión ni alteran EonState.
+  El flag vision_active y el estado lógico VISION_ACTIVE son independientes.
+- Solo cuenta un intervalo continuo cuando auto-hide está habilitado, el panel
+  no está en PEEK, EonState es IDLE, los tres flags están inactivos y el ratón
+  está fuera. Actividad o presencia del ratón reinicia el intervalo: al liberar
+  el último bloqueo se cuentan de nuevo los N segundos completos. Notificar
+  repetidamente el mismo valor no retrasa el deadline.
+- tick debe llamarse periódicamente; colapsa al alcanzar N segundos, no antes.
+  El controlador no utiliza QTimer, hilos ni APIs de hardware.
+
+Estas interfaces se usarán desde voz/visión en fases futuras; todavía no hay
+wiring real. Cambiar sus firmas o garantías exige una decisión documentada
+previa y actualización coordinada de contratos y tests, igual que ModelProvider.
+El controlador y los widgets se consumen de forma serializada desde el hilo GUI;
+futuros emisores de otros hilos deberán encolar notificaciones a ese hilo.
+
+```python
+NotchWindow(controller: NotchController | None = None)  # QWidget
+refresh(self, *args: object) -> None
+```
+
+NotchWindow es frameless, always-on-top, Tool y WA_TranslucentBackground.
+PEEK/HOVER_PEEK usan WindowDoesNotAcceptFocus y NoFocus; EXPANDED permite foco.
+Un clic en la vista reducida solo solicita expansión, sin invocar activateWindow;
+un clic en el panel ya expandido puede tomar foco. Esc es colapso local, no hotkey
+global. QTimer de 200 ms llama a tick y sincroniza color, visibilidad y geometría.
+QScreen.geometry() calcula el centro superior actual en píxeles lógicos; observa
+cambios de pantalla principal y geometría, también reevalúa cada tick y limita
+el tamaño si la pantalla es menor. No usa coordenadas de pantalla fijas.
+
+Dimensiones iniciales: PEEK 220×5, HOVER_PEEK 220×27, EXPANDED 220×90, todas
+provisionales hasta revisión visual. Personaje y labels aparecen solo expandido;
+la vista previa muestra texto de estado. Acceso a pantalla/cursor y eventos de
+ratón se capturan con logging; last_error: str | None expone fallos periféricos.
+Al cerrar se detiene QTimer y se desconectan observadores de pantalla.
+Las flags y dimensiones se comprueban offscreen; foco real, barra de tareas,
+composición, contraste sobre el escritorio y varios monitores requieren prueba
+visual humana. Esta fase no acredita esas propiedades por observación en Windows.
+
+## 14. CharWidget y verificación de Fase 4 — 2026-10-08
+
+```python
+CharWidget(parent: QWidget | None = None)  # QWidget
+set_eon_state(self, state: EonState) -> None
+```
+
+gui/char_widget.py pinta un ojo vectorial funcional con QPainter. Es contenido
+artístico temporal, no lógica incompleta: assets/char/ solo tiene .gitkeep.
+set_eon_state exige EonState, actualiza el label accesible y anima QColor durante
+220 ms con InOutCubic. Una transición interrumpida parte del color interpolado
+actual; repetir el estado no reinicia la animación. No altera EonState global,
+geometría ni flags del controlador. No se implementan sprites o arte final.
+Su firma también requiere decisión previa documentada antes de modificarse.
+
+Tests puros: test_eon_state.py y test_notch_controller.py, con reloj inyectable
+y prueba de importación/ejecución en un proceso que prohíbe PyQt6. Tests mínimos
+Qt: test_char_widget.py y test_notch_qt.py, con QT_QPA_PLATFORM=offscreen,
+sin pytest-qt; comprueban animación, instanciación, flags, geometría y fallo
+de pantalla simulado, no validación de pantalla/ratón reales. Si falta PyQt6,
+solo los tests Qt se omiten; la lógica pura sigue siendo testeable.
+
+scripts/fase4_notch_harness.py es una herramienta manual, no un test de suite.
+Abre el notch inicialmente expandido y una ventana de controles con siete
+estados, tres flags, expandir/colapsar y cerrar. No importa módulos de voz/visión
+ni carga modelos, no captura micrófono/pantalla y no registra hotkeys globales.

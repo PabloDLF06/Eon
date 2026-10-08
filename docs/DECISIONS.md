@@ -398,3 +398,61 @@ UX/pulido, fuera de Fase 3. Se conservan ambos scripts como herramientas de apoy
 a la decisión humana, con logging, type hints y CPU-only; los WAV, modelos e
 informes locales de .runtime/ no se versionan. Esta entrada actualiza la elección
 provisional de la sección 12 sin reescribir su evidencia histórica.
+
+## 15. Fase 4: notch desacoplado y personaje vectorial — 2026-10-08
+
+Antes de instalar se consultaron los metadatos oficiales de
+[PyQt6 6.11.0 en PyPI](https://pypi.org/project/PyQt6/6.11.0/#files).
+Existe pyqt6-6.11.0-cp310-abi3-win_amd64.whl, compatible según las etiquetas
+del Python local 3.14.8/Windows AMD64 de 64 bits; requiere Python >=3.10.
+SHA-256 del wheel publicado:
+bd11b459c54dca068e988a42cf838303334f0d441b9d16d92ae6719fcb5ac6ba.
+La comprobación pip --dry-run --only-binary=:all: resolvió también wheels de
+PyQt6-Qt6 6.11.2 y PyQt6-sip 13.13.0 antes de instalar nada. Después se instaló
+solo PyQt6==6.11.0 y esas dos transitivas mediante --only-binary=:all:.
+El import real funcionó, Qt runtime informó 6.11.2 y pip check pasó.
+No se compila Qt/SIP ni se cambia la librería o el pin de Fase 0.
+
+Se proponen #39ff88 (verde) para VISION_ACTIVE y tamaños de panel 220×5
+(PEEK), 220×27 (HOVER_PEEK, 30 % del expandido) y 220×90 (EXPANDED), en
+píxeles lógicos. Tanto el verde como las dimensiones están PENDIENTES de
+confirmación/ajuste visual de Pablo, no son definitivos. Los otros seis hex
+son los indicados expresamente en este encargo; SPEC.md describe colores
+generales provisionales, pero no contiene esos hex ni un mapeo exacto de los
+siete estados. Prevalece esta especificación explícita posterior, sin reescribir
+SPEC.md. Colores acompañados de labels en español evitan depender solo del color.
+
+EonState y su paleta están en core/eon_state.py sin Qt. NotchController vive
+en gui/notch_window.py con reloj inyectable y tick puro; NotchWindow se importa
+perezosamente desde gui/notch_qt.py. Esa separación adicional de archivo garantiza
+que importar el controlador no importa PyQt6, incluso si no está instalado.
+Se prueban ambos módulos nuevos y se congela su interfaz en CONTRACTS.md.
+No se modifica config.py ni user_settings.json: dimensiones y tiempos de animación
+son constantes documentadas de esta fase, y auto-hide consume los ajustes existentes.
+
+Decisiones de interacción complementarias: actividad o ratón encima del panel
+reinicia el intervalo idle; al liberar todos los bloqueos se esperan N segundos
+completos, sin contar tiempo bloqueado. El ratón encima impide que el panel se
+cierre bajo el cursor. Los flags y EonState son independientes; voz/borrador no
+fuerzan expansión, visión sí y bloquea también el colapso manual. Se añaden
+expand/collapse para el harness sin inventar eventos de ratón; Esc es únicamente
+colapso local cuando el panel expandido tiene foco, no una hotkey global.
+QScreen usa la geometría real de la pantalla principal, no coordenadas fijas.
+
+CharWidget es un ojo vectorial simple, contenido artístico temporal permitido
+porque assets/char/ no contiene sprites. No hay lógica incompleta: cambia de
+estado y anima el color con QPropertyAnimation, 220 ms e InOutCubic, conservando
+el color actual si se interrumpe la transición. El acabado artístico definitivo
+y expresiones con sprites quedan fuera de Fase 4. La revisión UI/UX se centra
+en contraste, texto de estado, foco limitado al panel expandido y transición
+suave; no reemplaza la paleta y requisitos del encargo por un diseño web.
+
+No se añade pytest-qt: el controlador se prueba sin QApplication y los mínimos
+Qt usan directamente una QApplication offscreen y avance determinista de la
+animación. El harness manual está separado de la suite. El backend offscreen
+en este Windows enumera cero familias de fuentes; para revisar el render se
+cargó Segoe UI solo en un diagnóstico local, sin cambiar fuentes del proyecto.
+Offscreen no acredita foco real, ausencia de icono en taskbar, composición del
+escritorio ni comportamiento con pantallas físicas; Pablo debe probar el harness
+antes de autorizar merge. No hay wiring real de voz/visión, hotkey global ni arte
+final; tampoco se modifica safety, Genesis o model_router.
